@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    @apply bg-white text-gray-900;
+    overflow: hidden;
+    height: 100%;
+  }
+  
+  /* 全局鼠标样式 */
+  * {
+    cursor: default;
+  }
+  
+  /* 拖拽手柄使用抓取样式 */
+  .drag-handle {
+    cursor: grab !important;
+  }
+  
+  .drag-handle:active {
+    cursor: grabbing !important;
+  }
+
+  .text-tag {
+    color: #5C7BAC;
+  }
+}
+
+@layer components {
+  .reminder-item {
+    @apply flex items-center gap-3 p-1 hover:bg-gray-50 rounded-lg transition-colors flex-shrink-0;
+  }
+  
+  .reminder-item.editing {
+    @apply bg-blue-50 border border-blue-200;
+  }
+  
+  .reminder-item .reminder-content {
+    @apply transition-colors;
+  }
+  
+  .reminder-item:hover .reminder-content {
+    @apply text-blue-600;
+  }
+  
+  .reminder-item .drag-handle {
+    @apply transition-all duration-200;
+  }
+  
+  .reminder-item:hover .drag-handle {
+    @apply text-gray-600 scale-110;
+  }
+  
+  .reminder-item:active .drag-handle {
+    @apply text-gray-800 scale-105;
+  }
+  
+  .reminder-checkbox {
+    @apply w-5 h-5 rounded-full border-2 border-gray-300 hover:border-reminder-blue transition-colors;
+  }
+  
+  .reminder-checkbox.checked {
+    @apply bg-reminder-blue border-reminder-blue;
+  }
+  
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer;
+  }
+  
+  .sidebar-item.active {
+    @apply bg-reminder-blue text-white;
+  }
+} 
