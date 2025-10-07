@@ -136,14 +136,15 @@ export default function Home() {
   const handleFileSelect = async (fileHandle: FileSystemFileHandle | null) => {
     try {
       if (fileHandle) {
-        // 设置文件句柄（这会创建持久化writable流）
-        await FileStorageService.setFileHandle(fileHandle)
         setCurrentFilePath(fileHandle.name)
 
         // 尝试从文件读取数据
         try {
           const data = await FileStorageService.readFromFile(fileHandle)
           setReminders(data || [])
+          
+          // 设置文件句柄时传递初始数据，这样会在创建持久化writable流时自动写入
+          await FileStorageService.setFileHandle(fileHandle, data || [])
         } catch (error) {
           console.warn('从文件读取数据失败，使用空数据:', error)
           setReminders([])
@@ -200,8 +201,8 @@ export default function Home() {
           // 写入数据到新文件
           await FileStorageService.writeToFile(fileHandle, reminders)
 
-          // 设置新文件为当前文件（这会创建持久化writable流）
-          await FileStorageService.setFileHandle(fileHandle)
+          // 设置新文件为当前文件（这会创建持久化writable流，并写入初始数据）
+          await FileStorageService.setFileHandle(fileHandle, reminders)
           setCurrentFilePath(fileHandle.name)
 
           console.log('数据已保存到文件:', fileHandle.name)

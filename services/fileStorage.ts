@@ -68,7 +68,7 @@ export class FileStorageService {
   }
 
   // 创建持久化writable流
-  static async createPersistentWritable(fileHandle: FileSystemFileHandle): Promise<void> {
+  static async createPersistentWritable(fileHandle: FileSystemFileHandle, initialData?: any): Promise<void> {
     try {
       // 先关闭现有的writable流
       if (this.persistentWritable) {
@@ -90,6 +90,17 @@ export class FileStorageService {
           },
           close: async () => {
             await writable.close()
+          }
+        }
+        
+        // 如果有初始数据，立即写入一次以触发临时文件生成
+        if (initialData) {
+          try {
+            const jsonData = JSON.stringify(initialData, null, 2)
+            await this.persistentWritable.write(jsonData)
+            console.log('初始数据已写入持久化writable流，触发临时文件生成')
+          } catch (writeError) {
+            console.warn('初始数据写入失败:', writeError)
           }
         }
         
@@ -228,7 +239,7 @@ export class FileStorageService {
   }
 
   // 设置文件句柄
-  static async setFileHandle(fileHandle: FileSystemFileHandle | null): Promise<void> {
+  static async setFileHandle(fileHandle: FileSystemFileHandle | null, initialData?: any): Promise<void> {
     const fileInfo = this.getFileStorageInfo()
     fileInfo.fileHandle = fileHandle
     fileInfo.filePath = fileHandle ? fileHandle.name : null
@@ -238,9 +249,9 @@ export class FileStorageService {
     if (fileHandle) {
       fileInfo.lastFilePath = fileHandle.name
       
-      // 尝试创建持久化writable流
+      // 尝试创建持久化writable流，并传递初始数据
       try {
-        await this.createPersistentWritable(fileHandle)
+        await this.createPersistentWritable(fileHandle, initialData)
         console.log('持久化writable流创建成功')
       } catch (error) {
         console.warn('创建持久化writable流失败，将使用传统写入方式:', error)
