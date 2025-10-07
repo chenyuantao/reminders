@@ -5,9 +5,18 @@ export interface FileStorageInfo {
   lastFilePath: string | null // 新增：记录上次选择的文件路径
 }
 
+// 持久化writable流接口
+interface PersistentWritable {
+  write: (data: string) => Promise<void>
+  close: () => Promise<void>
+}
+
 export class FileStorageService {
   private static readonly STORAGE_KEY = 'reminders_file_storage'
   private static readonly REMINDERS_KEY = 'reminders'
+  
+  // 持久化writable流，在整个会话期间保持打开
+  private static persistentWritable: PersistentWritable | null = null
 
   // 获取存储的文件信息
   static getFileStorageInfo(): FileStorageInfo {
@@ -58,7 +67,73 @@ export class FileStorageService {
     }
   }
 
-  // 写入数据到文件
+  // 创建持久化writable流
+  static async createPersistentWritable(fileHandle: FileSystemFileHandle): Promise<void> {
+    try {
+      // 先关闭现有的writable流
+      if (this.persistentWritable) {
+        await this.persistentWritable.close()
+        this.persistentWritable = null
+      }
+
+      // 检查是否支持 createWritable 方法
+      if (typeof fileHandle.createWritable === 'function') {
+        console.log('创建持久化writable流:', fileHandle.name)
+        const writable = await fileHandle.createWritable()
+        
+        this.persistentWritable = {
+          write: async (data: string) => {
+            // 清空文件内容，然后写入新数据
+            await writable.truncate(0)
+            await writable.seek(0)
+            await writable.write(data)
+          },
+          close: async () => {
+            await writable.close()
+          }
+        }
+        
+        console.log('持久化writable流创建成功')
+        return
+      }
+
+      throw new Error('此浏览器不支持持久化文件写入')
+    } catch (error) {
+      console.error('创建持久化writable流失败:', error)
+      throw new Error('创建持久化writable流失败')
+    }
+  }
+
+  // 写入数据到持久化writable流
+  static async writeToPersistentWritable(data: any): Promise<void> {
+    if (!this.persistentWritable) {
+      throw new Error('持久化writable流未初始化')
+    }
+
+    try {
+      const jsonData = JSON.stringify(data, null, 2)
+      await this.persistentWritable.write(jsonData)
+      console.log('数据已写入持久化writable流')
+    } catch (error) {
+      console.error('写入持久化writable流失败:', error)
+      throw new Error('写入持久化writable流失败')
+    }
+  }
+
+  // 关闭持久化writable流
+  static async closePersistentWritable(): Promise<void> {
+    if (this.persistentWritable) {
+      try {
+        await this.persistentWritable.close()
+        this.persistentWritable = null
+        console.log('持久化writable流已关闭')
+      } catch (error) {
+        console.error('关闭持久化writable流失败:', error)
+      }
+    }
+  }
+
+  // 写入数据到文件（传统方法，用于一次性写入）
   static async writeToFile(fileHandle: FileSystemFileHandle, data: any): Promise<void> {
     try {
       console.log('开始写入文件:', fileHandle.name)
@@ -115,9 +190,21 @@ export class FileStorageService {
     localStorage.setItem(this.REMINDERS_KEY, JSON.stringify(data))
   }
 
-  // 保存数据到localStorage
+  // 保存数据（优先使用持久化writable流，失败则回退到localStorage）
   static async saveData(data: any): Promise<void> {
-    this.writeToLocalStorage(data)
+    try {
+      // 如果有持久化writable流，优先使用它
+      if (this.persistentWritable) {
+        await this.writeToPersistentWritable(data)
+        return
+      }
+
+      // 回退到localStorage
+      this.writeToLocalStorage(data)
+    } catch (error) {
+      console.warn('持久化写入失败，回退到localStorage:', error)
+      this.writeToLocalStorage(data)
+    }
   }
 
   // 加载数据（优先从文件加载，失败则从localStorage加载）
@@ -141,7 +228,7 @@ export class FileStorageService {
   }
 
   // 设置文件句柄
-  static setFileHandle(fileHandle: FileSystemFileHandle | null): void {
+  static async setFileHandle(fileHandle: FileSystemFileHandle | null): Promise<void> {
     const fileInfo = this.getFileStorageInfo()
     fileInfo.fileHandle = fileHandle
     fileInfo.filePath = fileHandle ? fileHandle.name : null
@@ -150,6 +237,19 @@ export class FileStorageService {
     // 如果设置了新文件，更新lastFilePath
     if (fileHandle) {
       fileInfo.lastFilePath = fileHandle.name
+      
+      // 尝试创建持久化writable流
+      try {
+        await this.createPersistentWritable(fileHandle)
+        console.log('持久化writable流创建成功')
+      } catch (error) {
+        console.warn('创建持久化writable流失败，将使用传统写入方式:', error)
+        // 如果创建失败，清除持久化writable流
+        this.persistentWritable = null
+      }
+    } else {
+      // 如果清除了文件句柄，也关闭持久化writable流
+      await this.closePersistentWritable()
     }
     
     this.saveFileStorageInfo(fileInfo)

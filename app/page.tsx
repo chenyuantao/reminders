@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
 import ReminderList from '@/components/ReminderList'
+import FileSelectionModal from '@/components/FileSelectionModal'
 import { Reminder, List } from '@/types/reminder'
 import { startOfWeek, addWeeks, isSameDay } from 'date-fns'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
@@ -17,6 +18,7 @@ export default function Home() {
   const [currentWeek, setCurrentWeek] = useState<Date>(new Date())
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null)
   const [newlyCreatedReminderId, setNewlyCreatedReminderId] = useState<string | null>(null)
+  const [showFileSelectionModal, setShowFileSelectionModal] = useState<boolean>(false)
 
   // 切换到上一周
   const goToPreviousWeek = () => {
@@ -60,9 +62,42 @@ export default function Home() {
       { id: 'completed', name: '已完成', color: '#FF3B30' }
     ]);
 
-    // 加载数据和文件信息
-    loadDataAndFileInfo()
+    // 检查是否需要显示文件选择对话框
+    checkFileSelectionNeeded()
   }, [])
+
+  // 页面关闭时清理writable流
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      FileStorageService.closePersistentWritable()
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
+
+  // 检查是否需要显示文件选择对话框
+  const checkFileSelectionNeeded = async () => {
+    try {
+      // 检查是否有有效的文件访问权限
+      const hasFileAccess = await FileStorageService.verifyFileAccess()
+      
+      if (!hasFileAccess) {
+        // 没有有效的文件访问权限，显示文件选择对话框
+        setShowFileSelectionModal(true)
+        return
+      }
+
+      // 如果有文件访问权限，加载数据
+      await loadDataAndFileInfo()
+    } catch (error) {
+      console.error('检查文件访问权限失败:', error)
+      // 出错时也显示文件选择对话框
+      setShowFileSelectionModal(true)
+    }
+  }
 
   // 加载数据和文件信息
   const loadDataAndFileInfo = async () => {
@@ -97,12 +132,12 @@ export default function Home() {
     }
   }
 
-  // 处理文件读取
+  // 处理文件选择
   const handleFileSelect = async (fileHandle: FileSystemFileHandle | null) => {
     try {
       if (fileHandle) {
-        // 设置文件句柄
-        FileStorageService.setFileHandle(fileHandle)
+        // 设置文件句柄（这会创建持久化writable流）
+        await FileStorageService.setFileHandle(fileHandle)
         setCurrentFilePath(fileHandle.name)
 
         // 尝试从文件读取数据
@@ -136,8 +171,11 @@ export default function Home() {
           setReminders(JSON.parse(savedReminders))
         }
       }
+      
+      // 关闭文件选择对话框
+      setShowFileSelectionModal(false)
     } catch (error) {
-      console.error('处理文件读取失败:', error)
+      console.error('处理文件选择失败:', error)
     }
   }
 
@@ -162,8 +200,8 @@ export default function Home() {
           // 写入数据到新文件
           await FileStorageService.writeToFile(fileHandle, reminders)
 
-          // 设置新文件为当前文件
-          FileStorageService.setFileHandle(fileHandle)
+          // 设置新文件为当前文件（这会创建持久化writable流）
+          await FileStorageService.setFileHandle(fileHandle)
           setCurrentFilePath(fileHandle.name)
 
           console.log('数据已保存到文件:', fileHandle.name)
@@ -229,7 +267,9 @@ export default function Home() {
     setReminders(updatedReminders)
 
     // 保存数据（优先保存到文件，失败则保存到localStorage）
-    FileStorageService.saveData(updatedReminders)
+    FileStorageService.saveData(updatedReminders).catch(error => {
+      console.error('保存数据失败:', error)
+    })
 
     // 返回新创建的提醒事项ID，用于立即进入编辑态
     return newReminder.id
@@ -252,13 +292,17 @@ export default function Home() {
       return 0
     })
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders)
+    FileStorageService.saveData(updatedReminders).catch(error => {
+      console.error('保存数据失败:', error)
+    })
   }
 
   const deleteReminder = (id: string) => {
     const updatedReminders = reminders.filter(reminder => reminder.id !== id)
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders)
+    FileStorageService.saveData(updatedReminders).catch(error => {
+      console.error('保存数据失败:', error)
+    })
   }
 
   const updateReminder = (id: string, updates: Partial<Reminder>) => {
@@ -277,12 +321,16 @@ export default function Home() {
       reminder.id === id ? { ...reminder, ...updates, tags } : reminder
     )
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders)
+    FileStorageService.saveData(updatedReminders).catch(error => {
+      console.error('保存数据失败:', error)
+    })
   }
 
   const reorderReminders = (newOrder: Reminder[]) => {
     setReminders(newOrder)
-    FileStorageService.saveData(newOrder)
+    FileStorageService.saveData(newOrder).catch(error => {
+      console.error('保存数据失败:', error)
+    })
   }
 
   // 批量移动提醒事项
@@ -293,14 +341,18 @@ export default function Home() {
         : reminder
     )
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders)
+    FileStorageService.saveData(updatedReminders).catch(error => {
+      console.error('保存数据失败:', error)
+    })
   }
 
   // 批量删除提醒事项
   const handleBatchDelete = (reminderIds: string[]) => {
     const updatedReminders = reminders.filter(reminder => !reminderIds.includes(reminder.id))
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders)
+    FileStorageService.saveData(updatedReminders).catch(error => {
+      console.error('保存数据失败:', error)
+    })
   }
 
   // 处理标签点击，创建带有相同标签的新事项
@@ -320,7 +372,9 @@ export default function Home() {
     // 添加到提醒事项列表
     const updatedReminders = [...reminders, newReminder]
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders)
+    FileStorageService.saveData(updatedReminders).catch(error => {
+      console.error('保存数据失败:', error)
+    })
     
     // 设置新创建的事项ID，用于立即进入编辑态
     setNewlyCreatedReminderId(newReminder.id)
@@ -468,6 +522,13 @@ export default function Home() {
           />
         </main>
       </div>
+
+      {/* 文件选择模态框 */}
+      <FileSelectionModal
+        isOpen={showFileSelectionModal}
+        onFileSelect={handleFileSelect}
+        onClose={() => setShowFileSelectionModal(false)}
+      />
     </div>
   )
 } 
