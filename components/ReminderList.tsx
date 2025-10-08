@@ -7,6 +7,7 @@ import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import { extractTagsFromReminder, countTagsInReminders } from '@/utils/tagExtractor'
 import ContextMenu from './ContextMenu'
+import LinkifiedText from './LinkifiedText'
 import {
   DndContext,
   closestCenter,
@@ -538,16 +539,24 @@ function SortableReminderItem({
           <>
             <div className="flex items-center gap-2">
               <h3
-                className={`text-sm whitespace-normal flex-1 min-w-0 ${reminder.completed ? 'line-through text-gray-500' : 'text-gray-900'
-                  }`}
+                className={`text-sm whitespace-normal flex-1 min-w-0 ${
+                  reminder.completed ? 'line-through text-gray-500' : 'text-gray-900'
+                }`}
               >
-                {reminder.title}
+                <LinkifiedText 
+                  text={reminder.title}
+                  linkClassName="text-blue-600 hover:text-blue-800"
+                  showIcon={true}
+                />
               </h3>
             </div>
-
             {reminder.notes && (
               <p className="text-sm text-gray-500 break-words mt-1">
-                {reminder.notes}
+                <LinkifiedText 
+                  text={reminder.notes}
+                  linkClassName="text-blue-500 hover:text-blue-700"
+                  showIcon={true}
+                />
               </p>
             )}
 

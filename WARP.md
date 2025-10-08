@@ -148,6 +148,13 @@ interface Reminder {
 - **Tag extraction**: Automatically extracts hashtags from pasted content
 - **Input field awareness**: Ignores paste events when user is actively typing in input fields
 
+### Link Recognition and Display
+- **Automatic URL detection**: Identifies URLs, domain names, and web links in reminder text
+- **Clickable links**: Converts recognized URLs into clickable links with hover effects
+- **Safe link opening**: Opens links in new tabs with security attributes (noopener noreferrer)
+- **Visual indicators**: Shows external link icons to distinguish clickable content
+- **Smart URL parsing**: Handles various URL formats (http/https, www., domain.com)
+
 ### Week-based Navigation
 - Weekly view with navigation controls
 - Dynamic week title generation (`Y2024M10W2` format)
