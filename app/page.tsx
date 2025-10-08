@@ -6,7 +6,7 @@ import ReminderList from '@/components/ReminderList'
 import FileSelectionModal from '@/components/FileSelectionModal'
 import { Reminder, List } from '@/types/reminder'
 import { startOfWeek, addWeeks, isSameDay } from 'date-fns'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Eye, EyeOff } from 'lucide-react'
 import { FileStorageService } from '@/services/fileStorage'
 import { extractTagsFromReminder, calculateAllTagStatistics } from '@/utils/tagExtractor'
 import TagStats from '@/components/TagStats'
@@ -21,6 +21,7 @@ export default function Home() {
   const [showFileSelectionModal, setShowFileSelectionModal] = useState<boolean>(false)
   const [activeHashtagFilters, setActiveHashtagFilters] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [hideCompleted, setHideCompleted] = useState<boolean>(false)
 
   // 切换到上一周
   const goToPreviousWeek = () => {
@@ -102,10 +103,10 @@ export default function Home() {
       try {
         // 获取粘贴板内容
         const clipboardText = event.clipboardData?.getData('text/plain')
-        
+
         if (clipboardText && clipboardText.trim()) {
           const today = new Date()
-          
+
           // 创建新的提醒事项，标题为粘贴的内容
           const newReminder: Reminder = {
             id: Date.now().toString(),
@@ -140,7 +141,7 @@ export default function Home() {
 
     // 添加粘贴事件监听器
     document.addEventListener('paste', handlePaste)
-    
+
     return () => {
       document.removeEventListener('paste', handlePaste)
     }
@@ -151,7 +152,7 @@ export default function Home() {
     try {
       // 检查是否有有效的文件访问权限
       const hasFileAccess = await FileStorageService.verifyFileAccess()
-      
+
       if (!hasFileAccess) {
         // 没有有效的文件访问权限，显示文件选择对话框
         setShowFileSelectionModal(true)
@@ -210,7 +211,7 @@ export default function Home() {
         try {
           const data = await FileStorageService.readFromFile(fileHandle)
           setReminders(data || [])
-          
+
           // 设置文件句柄时传递初始数据，这样会在创建持久化writable流时自动写入
           await FileStorageService.setFileHandle(fileHandle, data || [])
         } catch (error) {
@@ -240,7 +241,7 @@ export default function Home() {
           setReminders(JSON.parse(savedReminders))
         }
       }
-      
+
       // 关闭文件选择对话框
       setShowFileSelectionModal(false)
     } catch (error) {
@@ -396,15 +397,39 @@ export default function Home() {
   }
 
   const reorderReminders = (newOrder: Reminder[]) => {
-    setReminders(newOrder)
-    FileStorageService.saveData(newOrder).catch(error => {
+    // 以“块替换”的方式合并：
+    // - 在全量列表 prev 中找到第一次出现 newOrder 内元素的位置
+    // - 用 newOrder 的顺序整体替换掉 prev 中所有 newOrder 内的元素
+    // - 未在 newOrder 内的元素保持原有相对顺序与位置
+    const idsInNew = new Set(newOrder.map(r => r.id))
+    const merged: Reminder[] = []
+    let inserted = false
+    for (const item of reminders) {
+      if (idsInNew.has(item.id)) {
+        if (!inserted) {
+          // 插入新顺序块
+          for (const r of newOrder) merged.push(r)
+          inserted = true
+        }
+        // 跳过原有的这些元素（已由新顺序块替换）
+        continue
+      }
+      merged.push(item)
+    }
+    // 兜底：若 newOrder 中有不在 prev 的（理论上不应发生），附加到末尾
+    if (!inserted) {
+      for (const r of newOrder) if (!merged.find(x => x.id === r.id)) merged.push(r)
+    }
+    setReminders(merged)
+    // 持久化
+    FileStorageService.saveData(merged).catch(error => {
       console.error('保存数据失败:', error)
     })
   }
 
   // 批量移动提醒事项
   const handleBatchMove = (reminderIds: string[], targetDate: Date) => {
-    const updatedReminders = reminders.map(reminder => 
+    const updatedReminders = reminders.map(reminder =>
       reminderIds.includes(reminder.id)
         ? { ...reminder, dueDate: targetDate.toISOString(), updatedAt: new Date().toISOString() }
         : reminder
@@ -452,17 +477,17 @@ export default function Home() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
-    
+
     // 添加到提醒事项列表
     const updatedReminders = [...reminders, newReminder]
     setReminders(updatedReminders)
     FileStorageService.saveData(updatedReminders).catch(error => {
       console.error('保存数据失败:', error)
     })
-    
+
     // 设置新创建的事项ID，用于立即进入编辑态
     setNewlyCreatedReminderId(newReminder.id)
-    
+
     // 延迟清理，确保编辑状态能够正确触发
     setTimeout(() => {
       setNewlyCreatedReminderId(null)
@@ -524,13 +549,13 @@ export default function Home() {
   }
 
   const filteredReminders = getFilteredReminders();
-  
+
   // 优化：使用 useMemo 缓存标签统计数据，避免重复计算
   // 修复：TagStats 应该显示当前视图下所有item的hashtag，不受筛选影响
   const tagStatistics = useMemo(() => {
     // 获取当前视图下的所有提醒事项（不受hashtag筛选影响）
     const currentViewReminders = getFilteredReminders(selectedList, false) // 添加参数跳过hashtag筛选
-    
+
     // 计算当前视图下所有标签的统计信息
     return calculateAllTagStatistics(currentViewReminders)
   }, [reminders, selectedList, currentWeek]) // 移除filteredReminders依赖
@@ -592,7 +617,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* 清除按钮和标签统计显示 */}
+            {/* 清除按钮、隐藏已完成、标签统计显示 */}
             <div className="flex items-center gap-2">
               {activeHashtagFilters.size > 0 && (
                 <button
@@ -601,6 +626,15 @@ export default function Home() {
                   title={`清除筛选 (${activeHashtagFilters.size}个标签)`}
                 >
                   <X className="w-4 h-4" />
+                </button>
+              )}
+              {selectedList !== 'scheduled' && selectedList !== 'completed' && (
+                <button
+                  onClick={() => setHideCompleted(v => !v)}
+                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                  title={hideCompleted ? '显示已完成' : '隐藏已完成'}
+                >
+                  {hideCompleted ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               )}
               <TagStats
@@ -627,6 +661,7 @@ export default function Home() {
             newlyCreatedReminderId={newlyCreatedReminderId}
             currentWeek={currentWeek}
             selectedList={selectedList}
+            hideCompleted={(selectedList === 'all' || selectedList === 'today') ? hideCompleted : false}
           />
         </main>
       </div>

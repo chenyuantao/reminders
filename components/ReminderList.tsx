@@ -66,7 +66,7 @@ interface DayHeaderProps {
   onAddClick: () => void
 }
 
-function DayHeader({ dayName, date, onAddClick }: DayHeaderProps) {
+function DayHeader({ dayName, date, onAddClick, completedCount }: DayHeaderProps & { completedCount?: number }) {
   const today = new Date()
   const isToday = isSameDay(date, today)
   const dateString = format(date, 'MM/dd');
@@ -79,8 +79,11 @@ function DayHeader({ dayName, date, onAddClick }: DayHeaderProps) {
         onClick={onAddClick}
         title="点击添加提醒事项"
       >
-        <h3 className="text-lg font-semibold text-gray-900">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
           今天
+          {Boolean(completedCount && completedCount > 0) && (
+            <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">✓ {completedCount}</span>
+          )}
         </h3>
 
       </div>
@@ -93,8 +96,11 @@ function DayHeader({ dayName, date, onAddClick }: DayHeaderProps) {
       onClick={onAddClick}
       title="点击添加提醒事项"
     >
-      <h3 className="text-sm text-gray-500">
+      <h3 className="text-sm text-gray-500 flex items-center gap-2">
         {text}
+        {Boolean(completedCount && completedCount > 0) && (
+          <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">✓ {completedCount}</span>
+        )}
       </h3>
 
     </div>
@@ -113,6 +119,8 @@ interface DaySectionProps {
   orderedIds?: string[]
   activeId?: string | null
   containerId?: string
+  hideCompleted?: boolean
+  selectedList: string
   editingId: string | null
   editingTitle: string
   editingNotes: string
@@ -139,6 +147,8 @@ function DaySection({
   orderedIds,
   activeId,
   containerId,
+  hideCompleted,
+  selectedList,
   editingId,
   editingTitle,
   editingNotes,
@@ -221,7 +231,7 @@ function DaySection({
   }
 
   // 使日期容器本身成为 droppable，以支持空日期接收
-  const { setNodeRef: setContainerDroppableRef } = useDroppable({ id: containerId || `container-${dayData.date.toISOString().slice(0,10)}` })
+  const { setNodeRef: setContainerDroppableRef } = useDroppable({ id: containerId || `container-${dayData.date.toISOString().slice(0, 10)}` })
 
   return (
     <div key={dayData.dayKey} className="space-y-2" ref={setContainerDroppableRef}>
@@ -230,6 +240,7 @@ function DaySection({
         dayName={dayData.dayName}
         date={dayData.date}
         onAddClick={handleAddClick}
+        completedCount={hideCompleted ? reminders.filter(r => r.dueDate && isSameDay(new Date(r.dueDate), dayData.date) && r.completed).length : 0}
       />
 
       {/* 该日期的提醒事项 */}
@@ -239,9 +250,10 @@ function DaySection({
       }}>
         {(orderedIds
           ? orderedIds
-              .map(id => reminders.find(r => r.id === id))
-              .filter((r): r is Reminder => !!r) // 不再按 dueDate 过滤，允许预览项在目标日期出现占位
+            .map(id => reminders.find(r => r.id === id))
+            .filter((r): r is Reminder => !!r)
           : dayData.reminders)
+          .filter(r => !(hideCompleted && (selectedList === 'all' || selectedList === 'today') && r.completed))
           .map((reminder, index) => (
             <div key={reminder.id}>
               <SortableReminderItem
@@ -304,6 +316,7 @@ interface ReminderListProps {
   newlyCreatedReminderId?: string | null
   currentWeek?: Date
   selectedList: string
+  hideCompleted?: boolean
 }
 
 const getPriorityColor = (priority: string | undefined) => {
@@ -380,7 +393,7 @@ function SortableReminderItem({
     transition,
     isDragging,
   } = useSortable({ id: reminder.id })
-  
+
   // 用于跟踪是否按下了ESC键，以便在onBlur时不保存
   const [isEscapePressed, setIsEscapePressed] = useState(false)
 
@@ -410,7 +423,7 @@ function SortableReminderItem({
       }
     }
   }, [editingId === reminder.id, cancelEditing])
-  
+
   // 重置ESC标志当进入编辑模式时
   useEffect(() => {
     if (editingId === reminder.id) {
@@ -466,7 +479,7 @@ function SortableReminderItem({
       <div
         className="flex-1 min-w-0 cursor-pointer reminder-content"
         onClick={(e) => {
-          if(e.shiftKey || e.ctrlKey || e.metaKey) {
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
             // 多选模式下退出编辑态
             if (editingId) {
               cancelEditing()
@@ -595,11 +608,10 @@ function SortableReminderItem({
           <>
             <div className="flex items-center gap-2">
               <h3
-                className={`text-sm whitespace-normal flex-1 min-w-0 ${
-                  reminder.completed ? 'line-through text-gray-500' : 'text-gray-900'
-                }`}
+                className={`text-sm whitespace-normal flex-1 min-w-0 ${reminder.completed ? 'line-through text-gray-500' : 'text-gray-900'
+                  }`}
               >
-                <LinkifiedText 
+                <LinkifiedText
                   text={reminder.title}
                   linkClassName="text-blue-600 hover:text-blue-800"
                   showIcon={true}
@@ -608,7 +620,7 @@ function SortableReminderItem({
             </div>
             {reminder.notes && (
               <p className="text-sm text-gray-500 break-words mt-1">
-                <LinkifiedText 
+                <LinkifiedText
                   text={reminder.notes}
                   linkClassName="text-blue-500 hover:text-blue-700"
                   showIcon={true}
@@ -667,14 +679,15 @@ export default function ReminderList({
   onEditingChange,
   newlyCreatedReminderId,
   currentWeek,
-  selectedList
+  selectedList,
+  hideCompleted
 }: ReminderListProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [editingNotes, setEditingNotes] = useState('')
   const [insertPosition, setInsertPosition] = useState<number | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  
+
   // 多选状态管理
   const [selectedReminderIds, setSelectedReminderIds] = useState<Set<string>>(new Set())
   const [contextMenu, setContextMenu] = useState<{
@@ -755,7 +768,7 @@ export default function ReminderList({
       const target = event.target as Element
       const isReminderItem = target.closest('.reminder-item')
       const isContextMenu = target.closest('[data-context-menu]')
-      
+
       // 如果没有点击提醒事项或右键菜单，且没有使用修饰键，则退出多选
       if (!isReminderItem && !isContextMenu && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
         setSelectedReminderIds(new Set())
@@ -765,7 +778,7 @@ export default function ReminderList({
 
     document.addEventListener('keydown', handleKeyDown)
     window.addEventListener('click', handleWindowClick)
-    
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('click', handleWindowClick)
@@ -778,12 +791,12 @@ export default function ReminderList({
       // 多选模式
       event.preventDefault()
       event.stopPropagation()
-      
+
       // 如果当前有正在编辑的事项，先退出编辑态
       if (editingId) {
         cancelEditing()
       }
-      
+
       setSelectedReminderIds(prev => {
         const newSet = new Set(prev)
         if (newSet.has(reminderId)) {
@@ -802,12 +815,12 @@ export default function ReminderList({
   // 处理右键菜单
   const handleContextMenu = (reminderId: string, event: React.MouseEvent) => {
     event.preventDefault()
-    
+
     // 如果右键点击的事项不在选中列表中，则选中它
     if (!selectedReminderIds.has(reminderId)) {
       setSelectedReminderIds(new Set([reminderId]))
     }
-    
+
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
@@ -870,12 +883,15 @@ export default function ReminderList({
     // 如果选择"今天"，只返回今天的日期区块
     if (selectedList === 'today') {
       const today = new Date()
-      const todayReminders = reminders.filter(reminder => {
+      let todayReminders = reminders.filter(reminder => {
         if (reminder.dueDate) {
           return isSameDay(new Date(reminder.dueDate), today)
         }
         return false
       })
+      if (hideCompleted) {
+        todayReminders = todayReminders.filter(r => !r.completed)
+      }
 
       // 获取今天是周几
       const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -953,12 +969,15 @@ export default function ReminderList({
 
     const weeklyData = weekDays.map((dayName, index) => {
       const dayDate = addDays(startOfCurrentWeek, index)
-      const dayReminders = reminders.filter(reminder => {
+      let dayReminders = reminders.filter(reminder => {
         if (reminder.dueDate) {
           return isSameDay(new Date(reminder.dueDate), dayDate)
         }
         return false
       })
+      if (hideCompleted && selectedList !== 'completed') {
+        dayReminders = dayReminders.filter(r => !r.completed)
+      }
 
       return {
         dayName,
@@ -1083,20 +1102,14 @@ export default function ReminderList({
       })
     })
 
-    // if (origin !== destination) {
-      
-    // } else {
-    //   onReorder(newList)
-    // }
-
     const dest = weekly.find(d => getContainerIdByDate(d.date) === destination)
-      if (dest) {
-        const targetIso = dest.date.toISOString()
-        const updated = newList.map(r => r.id === activeIdStr ? { ...r, dueDate: targetIso, updatedAt: new Date().toISOString() } : r)
-        onReorder(updated)
-      } else {
-        onReorder(newList)
-      }
+    if (dest) {
+      const targetIso = dest.date.toISOString()
+      const updated = newList.map(r => r.id === activeIdStr ? { ...r, dueDate: targetIso, updatedAt: new Date().toISOString() } : r)
+      onReorder(updated)
+    } else {
+      onReorder(newList)
+    }
 
     setContainers(buildContainersFromWeekly())
     // 现在容器已按最终状态重建，安全清除 activeId，避免回弹动画
@@ -1223,6 +1236,8 @@ export default function ReminderList({
                         orderedIds={items}
                         activeId={activeId}
                         containerId={containerId}
+                        hideCompleted={hideCompleted}
+                        selectedList={selectedList}
                         editingId={editingId}
                         editingTitle={editingTitle}
                         editingNotes={editingNotes}
@@ -1268,7 +1283,7 @@ export default function ReminderList({
           </DndContext>
         )}
       </div>
-      
+
       {/* 右键菜单 */}
       {contextMenu && (
         <ContextMenu
