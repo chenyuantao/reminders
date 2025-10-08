@@ -592,13 +592,8 @@ export default function Home() {
               )}
             </div>
 
-            {/* 标签统计显示和清除按钮 */}
+            {/* 清除按钮和标签统计显示 */}
             <div className="flex items-center gap-2">
-              <TagStats
-                {...tagStatistics}
-                activeHashtagFilters={activeHashtagFilters}
-                onHashtagClick={handleHashtagFilterClick}
-              />
               {activeHashtagFilters.size > 0 && (
                 <button
                   onClick={() => setActiveHashtagFilters(new Set())}
@@ -608,6 +603,11 @@ export default function Home() {
                   <X className="w-4 h-4" />
                 </button>
               )}
+              <TagStats
+                {...tagStatistics}
+                activeHashtagFilters={activeHashtagFilters}
+                onHashtagClick={handleHashtagFilterClick}
+              />
             </div>
           </div>
         </header>
