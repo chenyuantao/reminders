@@ -1187,6 +1187,7 @@ export default function ReminderList({
                   editingTitle={editingTitle}
                   editingNotes={editingNotes}
                   insertPosition={insertPosition}
+                  selectedList={selectedList}
                   onToggle={onToggle}
                   onDelete={onDelete}
                   onUpdate={onUpdate}
