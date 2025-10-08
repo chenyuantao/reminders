@@ -184,17 +184,17 @@ All commit messages MUST follow these strict conventions:
 
 ```bash
 # Valid commit message formats (REQUIRED)
-feat: add new reminder drag and drop functionality
-feat: implement file storage with fallback to localStorage  
-fix: resolve tag extraction not working with Chinese characters
-fix: correct week navigation boundary conditions
+feat: 添加新的提醒拖拽排序功能
+feat: 实现文件存储并提供localStorage回退机制  
+fix: 解决标签提取在中文字符下不工作的问题
+fix: 修正周导航边界条件错误
 ```
 
 **Commit Message Rules:**
 - **MUST** start with either `feat:` or `fix:` prefix
 - **feat:** for new features, enhancements, or additions
 - **fix:** for bug fixes, corrections, or issue resolutions
-- Use lowercase after the colon
+- **Content after colon MUST be in Chinese**
 - Be descriptive but concise
 - No other prefixes are allowed (no `chore:`, `docs:`, `refactor:`, etc.)
 
