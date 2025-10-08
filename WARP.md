@@ -179,6 +179,25 @@ if (typeof fileHandle.createWritable === 'function')
 
 ## Development Guidelines
 
+### Commit Message Requirements
+All commit messages MUST follow these strict conventions:
+
+```bash
+# Valid commit message formats (REQUIRED)
+feat: add new reminder drag and drop functionality
+feat: implement file storage with fallback to localStorage  
+fix: resolve tag extraction not working with Chinese characters
+fix: correct week navigation boundary conditions
+```
+
+**Commit Message Rules:**
+- **MUST** start with either `feat:` or `fix:` prefix
+- **feat:** for new features, enhancements, or additions
+- **fix:** for bug fixes, corrections, or issue resolutions
+- Use lowercase after the colon
+- Be descriptive but concise
+- No other prefixes are allowed (no `chore:`, `docs:`, `refactor:`, etc.)
+
 ### State Management Pattern
 - Centralized state in main page component (`app/page.tsx`)
 - Props-based data flow to child components  
