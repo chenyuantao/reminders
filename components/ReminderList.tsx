@@ -282,6 +282,7 @@ interface ReminderListProps {
   onTagClick: (date: Date, tag: string) => void
   onBatchMove: (reminderIds: string[], targetDate: Date) => void
   onBatchDelete: (reminderIds: string[]) => void
+  onEditingChange?: (editingId: string | null) => void
   newlyCreatedReminderId?: string | null
   currentWeek?: Date
   selectedList: string
@@ -638,6 +639,7 @@ export default function ReminderList({
   onTagClick,
   onBatchMove,
   onBatchDelete,
+  onEditingChange,
   newlyCreatedReminderId,
   currentWeek,
   selectedList
@@ -956,6 +958,7 @@ export default function ReminderList({
     setEditingId(reminder.id)
     setEditingTitle(reminder.title)
     setEditingNotes(reminder.notes || '')
+    onEditingChange?.(reminder.id)
   }
 
   const saveEditing = () => {
@@ -979,6 +982,7 @@ export default function ReminderList({
       setEditingId(null)
       setEditingTitle('')
       setEditingNotes('')
+      onEditingChange?.(null)
     }
   }
 
@@ -995,6 +999,7 @@ export default function ReminderList({
     setEditingId(null)
     setEditingTitle('')
     setEditingNotes('')
+    onEditingChange?.(null)
   }
 
   return (

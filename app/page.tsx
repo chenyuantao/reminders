@@ -20,6 +20,7 @@ export default function Home() {
   const [newlyCreatedReminderId, setNewlyCreatedReminderId] = useState<string | null>(null)
   const [showFileSelectionModal, setShowFileSelectionModal] = useState<boolean>(false)
   const [activeHashtagFilters, setActiveHashtagFilters] = useState<Set<string>>(new Set())
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // 切换到上一周
   const goToPreviousWeek = () => {
@@ -510,6 +511,10 @@ export default function Home() {
     // 然后根据激活的hashtag筛选器进行筛选（取并集）
     if (applyHashtagFilter && activeHashtagFilters.size > 0) {
       filteredReminders = filteredReminders.filter(reminder => {
+        // 如果是正在编辑的项目，不要过滤掉
+        if (editingId && reminder.id === editingId) {
+          return true
+        }
         // 检查提醒事项是否包含任何激活的标签
         return reminder.tags && reminder.tags.some(tag => activeHashtagFilters.has(tag))
       })
@@ -631,6 +636,7 @@ export default function Home() {
             onTagClick={handleTagClick}
             onBatchMove={handleBatchMove}
             onBatchDelete={handleBatchDelete}
+            onEditingChange={setEditingId}
             newlyCreatedReminderId={newlyCreatedReminderId}
             currentWeek={currentWeek}
             selectedList={selectedList}
