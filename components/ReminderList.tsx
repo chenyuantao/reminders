@@ -359,6 +359,9 @@ function SortableReminderItem({
     transition,
     isDragging,
   } = useSortable({ id: reminder.id })
+  
+  // 用于跟踪是否按下了ESC键，以便在onBlur时不保存
+  const [isEscapePressed, setIsEscapePressed] = useState(false)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -370,6 +373,8 @@ function SortableReminderItem({
     if (editingId === reminder.id) {
       const handleGlobalKeyDown = (event: KeyboardEvent) => {
         if (event.key === 'Escape') {
+          // 标记ESC被按下，防止onBlur保存内容
+          setIsEscapePressed(true)
           // 触发不保存退出输入态
           cancelEditing()
         }
@@ -384,6 +389,13 @@ function SortableReminderItem({
       }
     }
   }, [editingId === reminder.id, cancelEditing])
+  
+  // 重置ESC标志当进入编辑模式时
+  useEffect(() => {
+    if (editingId === reminder.id) {
+      setIsEscapePressed(false)
+    }
+  }, [editingId === reminder.id])
 
   // 自动调整textarea高度的useEffect
   useEffect(() => {
@@ -452,10 +464,19 @@ function SortableReminderItem({
                   return
                 }
                 if (e.key === 'Escape') {
+                  setIsEscapePressed(true)
                   cancelEditing()
                 }
                 if (e.key === 'Enter') {
                   saveEditing()
+                }
+              }}
+              onBlur={() => {
+                // 只有在没有按ESC的情况下才保存
+                if (!isEscapePressed) {
+                  setTimeout(() => {
+                    saveEditing()
+                  }, 100) // 稍微延迟，以允许焦点转移到textarea
                 }
               }}
               onCompositionEndCapture={(e) => {
@@ -475,6 +496,7 @@ function SortableReminderItem({
                   return
                 }
                 if (e.key === 'Escape') {
+                  setIsEscapePressed(true)
                   cancelEditing()
                 } else if ((e.key === 'Enter' && e.ctrlKey) || (e.key === 'Enter' && e.metaKey)) {
                   // Ctrl+Enter 或 Cmd+Enter 换行
@@ -496,13 +518,21 @@ function SortableReminderItem({
                   saveEditing()
                 }
               }}
+              onBlur={() => {
+                // 只有在没有按ESC的情况下才保存
+                if (!isEscapePressed) {
+                  setTimeout(() => {
+                    saveEditing()
+                  }, 100) // 稍微延迟，以允许焦点转移
+                }
+              }}
               onCompositionEndCapture={(e) => {
                 // 中文输入法组合输入完成时，更新备注
                 e.stopPropagation()
                 e.preventDefault()
                 setEditingNotes((e.target as HTMLTextAreaElement).value)
               }}
-              placeholder="添加备注（可选），Enter 保存，Ctrl/Cmd+Enter 换行，ESC 取消"
+              placeholder="添加备注（可选），点击空白保存，Ctrl/Cmd+Enter 换行，ESC 取消"
               className="w-full px-0 py-0 border-none bg-transparent text-gray-500 text-sm resize-none focus:outline-none focus:ring-0 min-h-[20px] max-h-[80px] overflow-y-auto break-words"
               style={{
                 height: 'auto',
