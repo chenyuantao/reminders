@@ -554,17 +554,6 @@ export default function Home() {
               }}>
                 {getCurrentTitle()}
               </h1>
-              
-              {/* 显示清除筛选按钮 */}
-              {activeHashtagFilters.size > 0 && (
-                <button
-                  onClick={() => setActiveHashtagFilters(new Set())}
-                  className="ml-3 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-                  title={`清除筛选 (${activeHashtagFilters.size}个标签)`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
               {selectedList === 'all' && (
                 <div className="flex items-center gap-2">
                   <button
@@ -603,12 +592,23 @@ export default function Home() {
               )}
             </div>
 
-            {/* 标签统计显示 */}
-            <TagStats
-              {...tagStatistics}
-              activeHashtagFilters={activeHashtagFilters}
-              onHashtagClick={handleHashtagFilterClick}
-            />
+            {/* 标签统计显示和清除按钮 */}
+            <div className="flex items-center gap-2">
+              <TagStats
+                {...tagStatistics}
+                activeHashtagFilters={activeHashtagFilters}
+                onHashtagClick={handleHashtagFilterClick}
+              />
+              {activeHashtagFilters.size > 0 && (
+                <button
+                  onClick={() => setActiveHashtagFilters(new Set())}
+                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                  title={`清除筛选 (${activeHashtagFilters.size}个标签)`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
