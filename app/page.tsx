@@ -6,7 +6,7 @@ import ReminderList from '@/components/ReminderList'
 import FileSelectionModal from '@/components/FileSelectionModal'
 import { Reminder, List } from '@/types/reminder'
 import { startOfWeek, addWeeks, isSameDay } from 'date-fns'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { FileStorageService } from '@/services/fileStorage'
 import { extractTagsFromReminder, calculateAllTagStatistics } from '@/utils/tagExtractor'
 import TagStats from '@/components/TagStats'
@@ -555,28 +555,15 @@ export default function Home() {
                 {getCurrentTitle()}
               </h1>
               
-              {/* 显示激活的hashtag筛选 */}
+              {/* 显示清除筛选按钮 */}
               {activeHashtagFilters.size > 0 && (
-                <div className="flex items-center gap-1 ml-3">
-                  <span className="text-sm text-gray-500">筛选:</span>
-                  <div className="flex items-center gap-1">
-                    {Array.from(activeHashtagFilters).map(tag => (
-                      <span
-                        key={tag}
-                        className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full border border-blue-200"
-                      >
-                        #{tag}
-                      </span>
-                    ))}
-                    <button
-                      onClick={() => setActiveHashtagFilters(new Set())}
-                      className="text-xs text-gray-400 hover:text-gray-600 ml-1"
-                      title="清除所有筛选"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
+                <button
+                  onClick={() => setActiveHashtagFilters(new Set())}
+                  className="ml-3 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                  title={`清除筛选 (${activeHashtagFilters.size}个标签)`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
               )}
               {selectedList === 'all' && (
                 <div className="flex items-center gap-2">
