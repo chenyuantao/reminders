@@ -2,7 +2,6 @@
 
 import React from 'react'
 import { parseTextWithUrls, safeOpenUrl } from '@/utils/urlParser'
-import { ExternalLink } from 'lucide-react'
 
 interface LinkifiedTextProps {
   text: string
@@ -48,13 +47,15 @@ export default function LinkifiedText({
                 safeOpenUrl(segment.url)
               }
             }}
-            className={`inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline cursor-pointer transition-colors ${linkClassName}`}
+            className={`text-blue-600 hover:text-blue-800 underline cursor-pointer transition-colors break-all ${linkClassName}`}
             title={`点击打开: ${segment.url}`}
+            style={{
+              wordBreak: 'break-all',
+              overflowWrap: 'break-word',
+              hyphens: 'auto'
+            }}
           >
-            <span>{segment.content}</span>
-            {showIcon && (
-              <ExternalLink className="w-3 h-3 inline-block" />
-            )}
+            {segment.content}
           </span>
         )
       })}
