@@ -8,8 +8,7 @@ interface SidebarProps {
   lists: ListType[]
   selectedList: string
   onSelectList: (listId: string) => void
-  onFileSelect: (fileHandle: FileSystemFileHandle | null) => void
-  onSaveAsFile: () => void
+  onLoadOtherFile: () => void
   currentFilePath?: string
 }
 
@@ -28,7 +27,7 @@ const getIcon = (listId: string) => {
   }
 }
 
-export default function Sidebar({ lists, selectedList, onSelectList, onFileSelect, onSaveAsFile, currentFilePath }: SidebarProps) {
+export default function Sidebar({ lists, selectedList, onSelectList, onLoadOtherFile, currentFilePath }: SidebarProps) {
   return (
     <div className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col" style={{
       width: '13rem',
@@ -57,8 +56,7 @@ export default function Sidebar({ lists, selectedList, onSelectList, onFileSelec
 
       <div className="p-4 border-t border-gray-200">
         <FileSelector
-          onFileSelect={onFileSelect}
-          onSaveAsFile={onSaveAsFile}
+          onLoadOtherFile={onLoadOtherFile}
           currentFilePath={currentFilePath}
         />
       </div>

@@ -452,6 +452,12 @@ export default function Home() {
     }, 100)
   }
 
+  // 处理加载其它文件
+  const handleLoadOtherFile = () => {
+    console.log('📁 用户请求加载其它文件')
+    setShowFileSelectionModal(true)
+  }
+
   const getFilteredReminders = (
     filterSelectedList = selectedList
   ) => {
@@ -513,8 +519,7 @@ export default function Home() {
         lists={lists}
         selectedList={selectedList}
         onSelectList={setSelectedList}
-        onFileSelect={handleFileSelect}
-        onSaveAsFile={handleSaveAsFile}
+        onLoadOtherFile={handleLoadOtherFile}
         currentFilePath={currentFilePath || undefined}
       />
 
