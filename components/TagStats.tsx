@@ -7,9 +7,18 @@ interface TagStatsProps {
   tagCompletionRates: Record<string, number>
   tagCompletionStats: Record<string, { total: number; completed: number }>
   className?: string
+  activeHashtagFilters?: Set<string>
+  onHashtagClick?: (tag: string) => void
 }
 
-export default function TagStats({ tagCounts, tagCompletionRates, tagCompletionStats, className = '' }: TagStatsProps) {
+export default function TagStats({ 
+  tagCounts, 
+  tagCompletionRates, 
+  tagCompletionStats, 
+  className = '',
+  activeHashtagFilters = new Set(),
+  onHashtagClick
+}: TagStatsProps) {
   if (Object.keys(tagCounts).length === 0) {
     return null
   }
@@ -20,12 +29,18 @@ export default function TagStats({ tagCounts, tagCompletionRates, tagCompletionS
         {Object.entries(tagCounts).map(([tag, count]) => {
           const completionRate = tagCompletionRates[tag] || 0
           const stats = tagCompletionStats[tag] || { total: 0, completed: 0 }
+          const isActive = activeHashtagFilters.has(tag)
           
           return (
             <div
               key={tag}
-              className="flex items-center gap-2 px-2 py-1 bg-white border border-gray-200 rounded-md shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
-              title={`${tag}: ${stats.completed}/${stats.total}个任务，完成率 ${Math.round(completionRate)}%`}
+              className={`flex items-center gap-2 px-2 py-1 rounded-md shadow-sm transition-all duration-200 hover:scale-105 cursor-pointer ${
+                isActive 
+                  ? 'bg-blue-100 border-2 border-blue-500 shadow-md' 
+                  : 'bg-white border border-gray-200 hover:shadow-md'
+              }`}
+              title={`${tag}: ${stats.completed}/${stats.total}个任务，完成率 ${Math.round(completionRate)}%${isActive ? ' (已激活筛选)' : ' (点击激活筛选)'}`}
+              onClick={() => onHashtagClick?.(tag)}
             >
               <CircularProgress
                 percentage={completionRate}
@@ -35,10 +50,14 @@ export default function TagStats({ tagCounts, tagCompletionRates, tagCompletionS
                 showText={false}
               />
               <div className="flex flex-col items-start min-w-0">
-                <span className="text-xs font-medium text-tag truncate max-w-32">
+                <span className={`text-xs font-medium truncate max-w-32 ${
+                  isActive ? 'text-blue-700' : 'text-gray-700'
+                }`}>
                   #{tag}
                 </span>
-                <span className="text-xs text-gray-500 font-mono">
+                <span className={`text-xs font-mono ${
+                  isActive ? 'text-blue-600' : 'text-gray-500'
+                }`}>
                   {stats.completed}/{stats.total}
                 </span>
               </div>

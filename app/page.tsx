@@ -19,6 +19,7 @@ export default function Home() {
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null)
   const [newlyCreatedReminderId, setNewlyCreatedReminderId] = useState<string | null>(null)
   const [showFileSelectionModal, setShowFileSelectionModal] = useState<boolean>(false)
+  const [activeHashtagFilters, setActiveHashtagFilters] = useState<Set<string>>(new Set())
 
   // 切换到上一周
   const goToPreviousWeek = () => {
@@ -422,6 +423,21 @@ export default function Home() {
     })
   }
 
+  // 处理hashtag筛选点击
+  const handleHashtagFilterClick = (tag: string) => {
+    setActiveHashtagFilters(prev => {
+      const newFilters = new Set(prev)
+      if (newFilters.has(tag)) {
+        // 如果已激活，则取消激活
+        newFilters.delete(tag)
+      } else {
+        // 如果未激活，则激活
+        newFilters.add(tag)
+      }
+      return newFilters
+    })
+  }
+
   // 处理标签点击，创建带有相同标签的新事项
   const handleTagClick = (date: Date, tag: string) => {
     // 创建新的提醒事项
@@ -459,8 +475,12 @@ export default function Home() {
   }
 
   const getFilteredReminders = (
-    filterSelectedList = selectedList
+    filterSelectedList = selectedList,
+    applyHashtagFilter = true
   ) => {
+    let filteredReminders = reminders
+
+    // 首先根据列表类型进行筛选
     if (filterSelectedList === 'all') {
       // 当选择"每周事项"时，根据当前选择的周来过滤
       const startOfCurrentWeek = startOfWeek(currentWeek, { weekStartsOn: 1 })
@@ -469,49 +489,46 @@ export default function Home() {
       // endOfCurrentWeek 设置为 23:59:59
       endOfCurrentWeek.setHours(23, 59, 59, 999)
 
-      return reminders.filter(reminder => {
+      filteredReminders = reminders.filter(reminder => {
         if (reminder.dueDate) {
           const dueDate = new Date(reminder.dueDate)
           return dueDate >= startOfCurrentWeek && dueDate <= endOfCurrentWeek
         }
         return false
       })
-    }
-    if (filterSelectedList === 'today') {
+    } else if (filterSelectedList === 'today') {
       const today = new Date()
-      return reminders.filter(reminder =>
+      filteredReminders = reminders.filter(reminder =>
         reminder.dueDate && isSameDay(new Date(reminder.dueDate), today)
       )
+    } else if (filterSelectedList === 'scheduled') {
+      filteredReminders = reminders.filter(reminder => reminder.dueDate)
+    } else if (filterSelectedList === 'completed') {
+      filteredReminders = reminders.filter(reminder => reminder.completed)
     }
-    if (filterSelectedList === 'scheduled') {
-      return reminders.filter(reminder => reminder.dueDate)
+
+    // 然后根据激活的hashtag筛选器进行筛选（取并集）
+    if (applyHashtagFilter && activeHashtagFilters.size > 0) {
+      filteredReminders = filteredReminders.filter(reminder => {
+        // 检查提醒事项是否包含任何激活的标签
+        return reminder.tags && reminder.tags.some(tag => activeHashtagFilters.has(tag))
+      })
     }
-    if (filterSelectedList === 'completed') {
-      return reminders.filter(reminder => reminder.completed)
-    }
-    return reminders
+
+    return filteredReminders
   }
 
   const filteredReminders = getFilteredReminders();
+  
   // 优化：使用 useMemo 缓存标签统计数据，避免重复计算
+  // 修复：TagStats 应该显示当前视图下所有item的hashtag，不受筛选影响
   const tagStatistics = useMemo(() => {
-    const allTagsStat = calculateAllTagStatistics(getFilteredReminders('scheduled'));
-    const existedTags = new Set<string>();
-    filteredReminders.forEach(reminder => {
-      (reminder.tags || []).forEach(tag => {
-        existedTags.add(tag);
-      });
-    });
-    // allTagsStat中只保留 existedTags 中的标签
-    Object.keys(allTagsStat.tagCounts).forEach(tag => {
-      if (!existedTags.has(tag)) {
-        delete allTagsStat.tagCounts[tag];
-        delete allTagsStat.tagCompletionRates[tag];
-        delete allTagsStat.tagCompletionStats[tag];
-      }
-    });
-    return allTagsStat;
-  }, [reminders, selectedList, currentWeek, filteredReminders])
+    // 获取当前视图下的所有提醒事项（不受hashtag筛选影响）
+    const currentViewReminders = getFilteredReminders(selectedList, false) // 添加参数跳过hashtag筛选
+    
+    // 计算当前视图下所有标签的统计信息
+    return calculateAllTagStatistics(currentViewReminders)
+  }, [reminders, selectedList, currentWeek]) // 移除filteredReminders依赖
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -532,6 +549,30 @@ export default function Home() {
               }}>
                 {getCurrentTitle()}
               </h1>
+              
+              {/* 显示激活的hashtag筛选 */}
+              {activeHashtagFilters.size > 0 && (
+                <div className="flex items-center gap-1 ml-3">
+                  <span className="text-sm text-gray-500">筛选:</span>
+                  <div className="flex items-center gap-1">
+                    {Array.from(activeHashtagFilters).map(tag => (
+                      <span
+                        key={tag}
+                        className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full border border-blue-200"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                    <button
+                      onClick={() => setActiveHashtagFilters(new Set())}
+                      className="text-xs text-gray-400 hover:text-gray-600 ml-1"
+                      title="清除所有筛选"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
               {selectedList === 'all' && (
                 <div className="flex items-center gap-2">
                   <button
@@ -573,6 +614,8 @@ export default function Home() {
             {/* 标签统计显示 */}
             <TagStats
               {...tagStatistics}
+              activeHashtagFilters={activeHashtagFilters}
+              onHashtagClick={handleHashtagFilterClick}
             />
           </div>
         </header>
