@@ -16,6 +16,10 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  useDroppable,
+  DragOverlay,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -106,6 +110,9 @@ interface DaySectionProps {
     dayKey: string
   }
   reminders: Reminder[]
+  orderedIds?: string[]
+  activeId?: string | null
+  containerId?: string
   editingId: string | null
   editingTitle: string
   editingNotes: string
@@ -129,6 +136,9 @@ interface DaySectionProps {
 function DaySection({
   dayData,
   reminders,
+  orderedIds,
+  activeId,
+  containerId,
   editingId,
   editingTitle,
   editingNotes,
@@ -210,8 +220,11 @@ function DaySection({
     }
   }
 
+  // 使日期容器本身成为 droppable，以支持空日期接收
+  const { setNodeRef: setContainerDroppableRef } = useDroppable({ id: containerId || `container-${dayData.date.toISOString().slice(0,10)}` })
+
   return (
-    <div key={dayData.dayKey} className="space-y-2">
+    <div key={dayData.dayKey} className="space-y-2" ref={setContainerDroppableRef}>
       {/* 日期标题 */}
       <DayHeader
         dayName={dayData.dayName}
@@ -221,14 +234,19 @@ function DaySection({
 
       {/* 该日期的提醒事项 */}
       <div className="space-y-1" style={{
-        display: dayData.reminders.length > 0 ? 'block' : 'none',
+        display: (orderedIds ? orderedIds.length : dayData.reminders.length) > 0 ? 'block' : 'none',
         marginLeft: '8px'
       }}>
-        {dayData.reminders
+        {(orderedIds
+          ? orderedIds
+              .map(id => reminders.find(r => r.id === id))
+              .filter((r): r is Reminder => !!r) // 不再按 dueDate 过滤，允许预览项在目标日期出现占位
+          : dayData.reminders)
           .map((reminder, index) => (
             <div key={reminder.id}>
               <SortableReminderItem
                 reminder={reminder}
+                activeId={activeId || undefined}
                 onToggle={onToggle}
                 onDelete={onDelete}
                 onUpdate={onUpdate}
@@ -247,7 +265,7 @@ function DaySection({
                 selectedReminderIds={selectedReminderIds}
               />
               {/* 在提醒事项之间添加分割线，最后一个不添加 */}
-              {index < dayData.reminders.length - 1 && (
+              {index < ((orderedIds ? orderedIds.length : dayData.reminders.length) - 1) && (
                 <div className="h-px bg-gray-200 mx-5 my-1"></div>
               )}
             </div>
@@ -255,16 +273,16 @@ function DaySection({
       </div>
 
       {/* 添加按钮 */}
-      {(dayData.reminders.length > 0 || isSameDay(dayData.date, new Date())) && (isSameDay(dayData.date, new Date()) || dayData.date > new Date()) && (
+      {(((orderedIds ? orderedIds.length : dayData.reminders.length) > 0) || isSameDay(dayData.date, new Date())) && (isSameDay(dayData.date, new Date()) || dayData.date > new Date()) && (
         <AddReminderButton
           onClick={handleAddClick}
           variant={
-            dayData.reminders.length > 0 ? 'secondary' : 'primary'
+            ((orderedIds ? orderedIds.length : dayData.reminders.length) > 0) ? 'secondary' : 'primary'
           }
         >
           <Plus className="w-4 h-4 mr-1" />
           <span className="text-sm">{
-            dayData.reminders.length > 0 ? '添加更多' : '添加提醒事项'
+            ((orderedIds ? orderedIds.length : dayData.reminders.length) > 0) ? '添加更多' : '添加提醒事项'
           }</span>
         </AddReminderButton>
       )}
@@ -317,6 +335,7 @@ const getPriorityText = (priority: string | undefined) => {
 // 可拖拽的提醒事项组件
 function SortableReminderItem({
   reminder,
+  activeId,
   onToggle,
   onDelete,
   onUpdate,
@@ -335,6 +354,7 @@ function SortableReminderItem({
   selectedReminderIds
 }: {
   reminder: Reminder
+  activeId?: string
   onToggle: (id: string) => void
   onDelete: (id: string) => void
   onUpdate: (id: string, updates: Partial<Reminder>) => void
@@ -410,10 +430,15 @@ function SortableReminderItem({
     }
   }, [editingNotes, editingId, reminder.id])
 
+  const isActiveDragging = !!activeId && activeId === reminder.id
+
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{
+        ...style,
+        visibility: isActiveDragging ? 'hidden' as const : undefined,
+      }}
       data-reminder-id={reminder.id}
       className={`reminder-item ${reminder.completed ? 'opacity-60' : ''
         } ${editingId === reminder.id ? 'editing' : ''
@@ -657,6 +682,32 @@ export default function ReminderList({
     y: number
     reminderId: string
   } | null>(null)
+
+  // dnd 多容器状态
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [activeContainerId, setActiveContainerId] = useState<string | null>(null)
+  const [containers, setContainers] = useState<Record<string, string[]>>({})
+
+  // 生成容器ID（按天）
+  const getContainerIdByDate = (date: Date) => `container-${date.toISOString().slice(0, 10)}`
+
+  // 从当前视图数据生成基础容器映射
+  const buildContainersFromWeekly = () => {
+    const weekly = getWeeklyReminders()
+    const map: Record<string, string[]> = {}
+    weekly.forEach(day => {
+      const id = getContainerIdByDate(day.date)
+      map[id] = day.reminders.map(r => r.id)
+    })
+    return map
+  }
+
+  // 当reminders/当前周/列表变化时，刷新容器（非拖拽时）
+  useEffect(() => {
+    if (!activeId) {
+      setContainers(buildContainersFromWeekly())
+    }
+  }, [reminders, selectedList, currentWeek])
 
   // 自动滚动到"今天"的DaySection
   useEffect(() => {
@@ -921,19 +972,17 @@ export default function ReminderList({
   }
 
 
-  // 拖拽传感器配置 - 在编辑态时完全禁用拖拽
+  // 拖拽传感器配置 - 保持现有长按启动
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        delay: 100, // 100ms 长按激活拖拽，避免与点击事件冲突
-        tolerance: 8, // 8px 移动容差，增加拖拽的稳定性
+        delay: 100,
+        tolerance: 8,
       },
-      // 在编辑态时完全禁用拖拽
       disabled: editingId !== null,
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-      // 在编辑态时完全禁用键盘拖拽
       disabled: editingId !== null,
     })
   )
@@ -941,17 +990,117 @@ export default function ReminderList({
   // 在编辑态时完全禁用拖拽功能
   const isDragDisabled = editingId !== null
 
-  // 拖拽结束处理
+  // 查找某个item所属容器ID
+  const findContainerOfItem = (id: string | null): string | null => {
+    if (!id) return null
+    for (const [cid, items] of Object.entries(containers)) {
+      if (items.includes(id)) return cid
+    }
+    return null
+  }
+
+  // 拖拽开始
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id)
+    setActiveId(id)
+    setActiveContainerId(findContainerOfItem(id))
+  }
+
+  // 拖拽悬停（预览）
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event
+    if (!active || !over) return
+    const activeIdStr = String(active.id)
+    const overIdStr = String(over.id)
+
+    const origin = findContainerOfItem(activeIdStr)
+    const destination = overIdStr.startsWith('container-') ? overIdStr : findContainerOfItem(overIdStr)
+
+    if (!origin || !destination) return
+
+    if (origin === destination) {
+      // 同容器排序预览
+      const overIndex = containers[origin].indexOf(overIdStr)
+      const activeIndex = containers[origin].indexOf(activeIdStr)
+      if (overIndex === -1 || activeIndex === -1 || overIndex === activeIndex) return
+      setContainers(prev => ({
+        ...prev,
+        [origin]: arrayMove(prev[origin], activeIndex, overIndex)
+      }))
+    } else {
+      // 跨容器移动预览
+      setContainers(prev => {
+        const next = { ...prev }
+        const originItems = [...(next[origin] || [])]
+        const destItems = [...(next[destination] || [])]
+        const activeIndex = originItems.indexOf(activeIdStr)
+        if (activeIndex === -1) return prev
+        originItems.splice(activeIndex, 1)
+        let insertIndex = destItems.length
+        const overIndex = destItems.indexOf(overIdStr)
+        if (overIndex !== -1) insertIndex = overIndex
+        destItems.splice(insertIndex, 0, activeIdStr)
+        next[origin] = originItems
+        next[destination] = destItems
+        return next
+      })
+    }
+  }
+
+  // 拖拽结束（持久化）
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
+    const activeIdStr = active ? String(active.id) : null
+    const overIdStr = over ? String(over.id) : null
 
-    if (active.id !== over?.id) {
-      const oldIndex = reminders.findIndex(reminder => reminder.id === active.id)
-      const newIndex = reminders.findIndex(reminder => reminder.id === over?.id)
+    // 注意：不要立即清除 activeId，以避免在重排前项恢复可见引发闪烁/回弹
 
-      const newReminders = arrayMove(reminders, oldIndex, newIndex)
-      onReorder(newReminders)
+    if (!activeIdStr || !overIdStr) {
+      setContainers(buildContainersFromWeekly())
+      setActiveId(null)
+      return
     }
+
+    const origin = findContainerOfItem(activeIdStr)
+    const destination = overIdStr.startsWith('container-') ? overIdStr : findContainerOfItem(overIdStr)
+
+    if (!origin || !destination) {
+      setContainers(buildContainersFromWeekly())
+      setActiveId(null)
+      return
+    }
+
+    const weekly = getWeeklyReminders()
+    const orderOfContainers = weekly.map(d => d.date).map(getContainerIdByDate)
+
+    const idToReminder = new Map(reminders.map(r => [r.id, r]))
+    const newList: Reminder[] = []
+    orderOfContainers.forEach(cid => {
+      const ids = containers[cid] || []
+      ids.forEach(id => {
+        const r = idToReminder.get(id)
+        if (r) newList.push(r)
+      })
+    })
+
+    // if (origin !== destination) {
+      
+    // } else {
+    //   onReorder(newList)
+    // }
+
+    const dest = weekly.find(d => getContainerIdByDate(d.date) === destination)
+      if (dest) {
+        const targetIso = dest.date.toISOString()
+        const updated = newList.map(r => r.id === activeIdStr ? { ...r, dueDate: targetIso, updatedAt: new Date().toISOString() } : r)
+        onReorder(updated)
+      } else {
+        onReorder(newList)
+      }
+
+    setContainers(buildContainersFromWeekly())
+    // 现在容器已按最终状态重建，安全清除 activeId，避免回弹动画
+    setActiveId(null)
   }
 
   const startEditing = (reminder: Reminder) => {
@@ -1052,52 +1201,70 @@ export default function ReminderList({
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
           >
-            <SortableContext
-              items={reminders.map(reminder => reminder.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="space-y-3 reminders-container">
-                {getWeeklyReminders().map((dayData, index) => (
+            <div className="space-y-3 reminders-container">
+              {getWeeklyReminders().map((dayData, index) => {
+                const containerId = getContainerIdByDate(dayData.date)
+                const items = containers[containerId] || dayData.reminders.map(r => r.id)
+                return (
                   <div
                     key={dayData.dayKey}
                     data-day-date={dayData.date.toISOString()}
-                    style={{
-                      marginTop: '0px'
-                    }}
+                    style={{ marginTop: '0px' }}
                   >
-                    <DaySection
-                      key={dayData.dayKey}
-                      dayData={dayData}
-                      reminders={reminders}
-                      editingId={editingId}
-                      editingTitle={editingTitle}
-                      editingNotes={editingNotes}
-                      insertPosition={insertPosition}
-                      onToggle={onToggle}
-                      onDelete={onDelete}
-                      onUpdate={onUpdate}
-                      onTagClick={onTagClick}
-                      setEditingTitle={setEditingTitle}
-                      setEditingNotes={setEditingNotes}
-                      startEditing={startEditing}
-                      saveEditing={saveEditing}
-                      cancelEditing={cancelEditing}
-                      onAddReminder={onAddReminder}
-                      setInsertPosition={setInsertPosition}
-                      selectedReminderIds={selectedReminderIds}
-                      onReminderItemClick={handleReminderItemClick}
-                      onReminderContextMenu={handleContextMenu}
-                    />
-                    {/* 在DaySection之间添加分割线，最后一个不添加 */}
+                    <SortableContext items={items} strategy={verticalListSortingStrategy}>
+                      <DaySection
+                        key={dayData.dayKey}
+                        dayData={dayData}
+                        reminders={reminders}
+                        orderedIds={items}
+                        activeId={activeId}
+                        containerId={containerId}
+                        editingId={editingId}
+                        editingTitle={editingTitle}
+                        editingNotes={editingNotes}
+                        insertPosition={insertPosition}
+                        onToggle={onToggle}
+                        onDelete={onDelete}
+                        onUpdate={onUpdate}
+                        onTagClick={onTagClick}
+                        setEditingTitle={setEditingTitle}
+                        setEditingNotes={setEditingNotes}
+                        startEditing={startEditing}
+                        saveEditing={saveEditing}
+                        cancelEditing={cancelEditing}
+                        onAddReminder={onAddReminder}
+                        setInsertPosition={setInsertPosition}
+                        selectedReminderIds={selectedReminderIds}
+                        onReminderItemClick={handleReminderItemClick}
+                        onReminderContextMenu={handleContextMenu}
+                      />
+                    </SortableContext>
                     {index < getWeeklyReminders().length - 1 && (
                       <div className="h-px bg-gray-200 my-2"></div>
                     )}
                   </div>
-                ))}
-              </div>
-            </SortableContext>
+                )
+              })}
+            </div>
+
+            <DragOverlay dropAnimation={null}>
+              {activeId ? (() => {
+                const r = reminders.find(x => x.id === activeId)
+                if (!r) return null
+                return (
+                  <div className="p-3 bg-white rounded-lg shadow-xl border border-gray-200">
+                    <div className="text-sm text-gray-900 break-words">{r.title || '(未命名)'}</div>
+                    {r.notes ? (
+                      <div className="text-xs text-gray-500 mt-1 break-words">{r.notes}</div>
+                    ) : null}
+                  </div>
+                )
+              })() : null}
+            </DragOverlay>
           </DndContext>
         )}
       </div>
