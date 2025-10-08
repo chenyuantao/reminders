@@ -78,6 +78,72 @@ export default function Home() {
     }
   }, [])
 
+  // 监听粘贴事件，自动添加待办事项
+  useEffect(() => {
+    const handlePaste = async (event: ClipboardEvent) => {
+      // 检查当前焦点元素是否为输入框
+      const activeElement = document.activeElement
+      const isInInputField = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.getAttribute('contenteditable') === 'true'
+      )
+
+      // 如果在输入框中，不处理粘贴事件
+      if (isInInputField) {
+        return
+      }
+
+      // 防止默认粘贴行为
+      event.preventDefault()
+
+      try {
+        // 获取粘贴板内容
+        const clipboardText = event.clipboardData?.getData('text/plain')
+        
+        if (clipboardText && clipboardText.trim()) {
+          const today = new Date()
+          
+          // 创建新的提醒事项，标题为粘贴的内容
+          const newReminder: Reminder = {
+            id: Date.now().toString(),
+            title: clipboardText.trim(),
+            notes: '',
+            dueDate: today.toISOString(),
+            tags: [], // 标签会在后续的提取过程中自动添加
+            completed: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+
+          // 提取标签
+          const tags = extractTagsFromReminder(newReminder.title, newReminder.notes)
+          newReminder.tags = tags
+
+          // 添加到提醒事项列表
+          const updatedReminders = [...reminders, newReminder]
+          setReminders(updatedReminders)
+
+          // 保存数据
+          FileStorageService.saveData(updatedReminders).catch(error => {
+            console.error('保存数据失败:', error)
+          })
+
+          console.log('已自动添加粘贴内容到今天的待办事项:', clipboardText.trim())
+        }
+      } catch (error) {
+        console.error('处理粘贴事件失败:', error)
+      }
+    }
+
+    // 添加粘贴事件监听器
+    document.addEventListener('paste', handlePaste)
+    
+    return () => {
+      document.removeEventListener('paste', handlePaste)
+    }
+  }, [reminders]) // 依赖reminders数组以获取最新状态
+
   // 检查是否需要显示文件选择对话框
   const checkFileSelectionNeeded = async () => {
     try {
