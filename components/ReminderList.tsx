@@ -807,7 +807,13 @@ export default function ReminderList({
         return newSet
       })
     } else {
-      // 单选模式 - 不阻止事件传播，让内容区域可以正常进入编辑态
+      // 单选模式 - 如果点击的是已经激活且唯一选中的item，不做任何操作
+      if (selectedReminderIds.size === 1 && selectedReminderIds.has(reminderId)) {
+        event.preventDefault()
+        event.stopPropagation()
+        return;
+      }
+      // 否则设置选中状态 - 不阻止事件传播，让内容区域可以正常进入编辑态
       setSelectedReminderIds(new Set([reminderId]))
     }
   }
@@ -1141,6 +1147,15 @@ export default function ReminderList({
         onDelete(editingId)
       }
       // 退出编辑态
+      // 如果此时焦点在当前编辑的 reminder 的输入框上，则不退出编辑
+      const activeElement = document.activeElement
+      if (activeElement) {
+        const reminderItem = activeElement.closest('[data-reminder-id]')
+        if (reminderItem && (activeElement.tagName.toLowerCase() === 'textarea' || activeElement.tagName.toLowerCase() === 'input')) {
+          // 焦点在当前编辑的 reminder 的输入框上，不退出编辑
+          return
+        }
+      }
       setEditingId(null)
       setEditingTitle('')
       setEditingNotes('')
