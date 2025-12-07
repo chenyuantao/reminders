@@ -150,7 +150,24 @@ export default function Home() {
   // 检查是否需要显示文件选择对话框
   const checkFileSelectionNeeded = async () => {
     try {
-      // 检查是否有有效的文件访问权限
+      // 首先尝试从 API 获取数据
+      try {
+        const response = await fetch('/api/list')
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success && result.data) {
+            // API 获取成功，设置数据并隐藏文件选择面板
+            const initialized = initializeRanks(result.data)
+            setReminders(initialized)
+            setShowFileSelectionModal(false)
+            return
+          }
+        }
+      } catch (apiError) {
+        console.warn('从 API 获取数据失败，尝试使用本地存储:', apiError)
+      }
+
+      // API 获取失败，检查是否有有效的文件访问权限
       const hasFileAccess = await FileStorageService.verifyFileAccess()
 
       if (!hasFileAccess) {
