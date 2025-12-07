@@ -2,9 +2,14 @@ import { NextResponse } from 'next/server'
 import { Reminder } from '@/types/reminder'
 import { fromDatabaseFormat } from '@/utils/dbConverter'
 import { getSupabaseClient } from '@/utils/supabaseClient'
+import { checkCode } from '@/utils/checkCode'
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
+        const res = checkCode(request)
+        if (res) return res
+
+        // 邀请码验证通过，继续获取数据
         const supabase = getSupabaseClient()
 
         // 从 Supabase 获取所有 reminders，按 rank 排序
@@ -22,7 +27,7 @@ export async function GET() {
         }
 
         // 确保返回的数据符合 Reminder 类型
-        const typedReminders: Reminder[] = (reminders || []).map((reminder: any) => 
+        const typedReminders: Reminder[] = (reminders || []).map((reminder: any) =>
             fromDatabaseFormat(reminder)
         )
 

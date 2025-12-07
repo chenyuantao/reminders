@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseClient } from '@/utils/supabaseClient'
+import { checkCode } from '@/utils/checkCode'
 
 export async function DELETE(request: Request) {
   try {
-    const supabase = getSupabaseClient()
-    
+    const res = checkCode(request)
+    if (res) return res
+
+    const supabase = getSupabaseClient()    
     // 从 URL 查询参数获取 id
     const url = new URL(request.url)
     const id = url.searchParams.get('id')

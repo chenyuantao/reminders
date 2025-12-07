@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
 import ReminderList from '@/components/ReminderList'
 import FileSelectionModal from '@/components/FileSelectionModal'
+import InviteCodeModal from '@/components/InviteCodeModal'
 import { Reminder, List } from '@/types/reminder'
 import { startOfWeek, addWeeks, isSameDay } from 'date-fns'
 import { ChevronLeft, ChevronRight, X, Eye, EyeOff } from 'lucide-react'
@@ -11,6 +12,9 @@ import { FileStorageService } from '@/services/fileStorage'
 import { MutationService } from '@/services/mutationService'
 import { extractTagsFromReminder, calculateAllTagStatistics } from '@/utils/tagExtractor'
 import TagStats from '@/components/TagStats'
+import { getCookie, setCookie, deleteCookie } from '@/utils/cookie'
+
+const INVITE_CODE_COOKIE_NAME = 'reminder_invite_code'
 
 export default function Home() {
   const [selectedList, setSelectedList] = useState<string>('all')
@@ -20,6 +24,12 @@ export default function Home() {
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null)
   const [newlyCreatedReminderId, setNewlyCreatedReminderId] = useState<string | null>(null)
   const [showFileSelectionModal, setShowFileSelectionModal] = useState<boolean>(false)
+  const [showInviteCodeModal, setShowInviteCodeModal] = useState<boolean>(false) // 初始不显示，等待 cookie 检查
+  const [inviteCode, setInviteCode] = useState<string | null>(null) // 存储验证通过的邀请码
+  const [inviteCodeError, setInviteCodeError] = useState<string | null>(null)
+  const [isVerifyingInviteCode, setIsVerifyingInviteCode] = useState<boolean>(false)
+  const [isAuthorized, setIsAuthorized] = useState<boolean>(false) // 是否已授权
+  const [isCheckingCookie, setIsCheckingCookie] = useState<boolean>(true) // 是否正在检查 cookie
   const [activeHashtagFilters, setActiveHashtagFilters] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [hideCompleted, setHideCompleted] = useState<boolean>(false)
@@ -66,9 +76,88 @@ export default function Home() {
       { id: 'completed', name: '已完成', color: '#FF3B30' }
     ]);
 
-    // 检查是否需要显示文件选择对话框
-    checkFileSelectionNeeded()
+    // 页面初始化时检查 cookie
+    checkCookieAndVerify()
   }, [])
+
+  // 检查 cookie 并验证邀请码
+  const checkCookieAndVerify = async () => {
+    setIsCheckingCookie(true)
+    
+    try {
+      // 从 cookie 中获取邀请码
+      const savedInviteCode = getCookie(INVITE_CODE_COOKIE_NAME)
+      
+      if (savedInviteCode) {
+        // 如果有 cookie，尝试用 cookie 中的邀请码进行验证
+        // 注意：验证过程中不删除 cookie，只有明确验证失败时才删除
+        const verifyResult = await verifyInviteCode(savedInviteCode)
+        
+        if (verifyResult.success) {
+          // 验证成功，直接使用
+          setInviteCode(savedInviteCode)
+          setIsAuthorized(true)
+          setShowInviteCodeModal(false)
+        } else {
+          // 验证失败
+          if (verifyResult.shouldDeleteCookie) {
+            // 明确验证失败（邀请码无效），删除无效的 cookie
+            deleteCookie(INVITE_CODE_COOKIE_NAME)
+          }
+          // 显示弹窗让用户重新输入
+          setShowInviteCodeModal(true)
+        }
+      } else {
+        // 没有 cookie，显示弹窗
+        setShowInviteCodeModal(true)
+      }
+    } catch (error) {
+      console.error('检查 cookie 失败:', error)
+      // 出错时显示弹窗
+      setShowInviteCodeModal(true)
+    } finally {
+      setIsCheckingCookie(false)
+    }
+  }
+
+  // 验证邀请码的通用函数
+  // 返回 { success: boolean, shouldDeleteCookie: boolean }
+  // shouldDeleteCookie 为 true 表示明确验证失败（邀请码无效），需要删除 cookie
+  // shouldDeleteCookie 为 false 表示网络错误等，不应该删除 cookie
+  const verifyInviteCode = async (code: string): Promise<{ success: boolean; shouldDeleteCookie: boolean }> => {
+    try {
+      const response = await fetch(`/api/list?inviteCode=${encodeURIComponent(code)}`)
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        // 验证成功，设置数据
+        if (result.data) {
+          const initialized = initializeRanks(result.data)
+          setReminders(initialized)
+        }
+        return { success: true, shouldDeleteCookie: false }
+      }
+      
+      // 明确验证失败（401/403 等），应该删除 cookie
+      if (response.status === 401 || response.status === 403) {
+        return { success: false, shouldDeleteCookie: true }
+      }
+      
+      // 其他错误（如 500），可能是服务器问题，不应该删除 cookie
+      return { success: false, shouldDeleteCookie: false }
+    } catch (error) {
+      // 网络错误等异常，不应该删除 cookie
+      console.error('验证邀请码失败:', error)
+      return { success: false, shouldDeleteCookie: false }
+    }
+  }
+
+  useEffect(() => {
+    // 只有在已授权的情况下才检查文件选择
+    if (isAuthorized) {
+      checkFileSelectionNeeded()
+    }
+  }, [isAuthorized])
 
   // 页面关闭时清理writable流
   useEffect(() => {
@@ -147,24 +236,61 @@ export default function Home() {
     }
   }, [reminders]) // 依赖reminders数组以获取最新状态
 
+  // 处理邀请码提交
+  const handleInviteCodeSubmit = async (code: string) => {
+    setIsVerifyingInviteCode(true)
+    setInviteCodeError(null)
+
+    try {
+      // 验证邀请码（验证过程中不删除 cookie）
+      const verifyResult = await verifyInviteCode(code)
+
+      if (verifyResult.success) {
+        // 邀请码验证通过，保存到 cookie（永久）
+        setCookie(INVITE_CODE_COOKIE_NAME, code)
+        setInviteCode(code)
+        setIsAuthorized(true)
+        setShowInviteCodeModal(false)
+      } else {
+        // 邀请码验证失败
+        if (verifyResult.shouldDeleteCookie) {
+          // 明确验证失败（邀请码无效），删除无效的 cookie（如果之前有保存）
+          deleteCookie(INVITE_CODE_COOKIE_NAME)
+          setInviteCodeError('邀请码无效，请重新输入')
+        } else {
+          // 网络错误等，不删除 cookie，只显示错误
+          setInviteCodeError('验证邀请码时出错，请稍后重试')
+        }
+      }
+    } catch (error) {
+      // 异常情况，不删除 cookie
+      console.error('验证邀请码失败:', error)
+      setInviteCodeError('验证邀请码时出错，请稍后重试')
+    } finally {
+      setIsVerifyingInviteCode(false)
+    }
+  }
+
   // 检查是否需要显示文件选择对话框
   const checkFileSelectionNeeded = async () => {
     try {
-      // 首先尝试从 API 获取数据
-      try {
-        const response = await fetch('/api/list')
-        if (response.ok) {
-          const result = await response.json()
-          if (result.success && result.data) {
-            // API 获取成功，设置数据并隐藏文件选择面板
-            const initialized = initializeRanks(result.data)
-            setReminders(initialized)
-            setShowFileSelectionModal(false)
-            return
+      // 首先尝试从 API 获取数据（需要传递邀请码）
+      if (inviteCode) {
+        try {
+          const response = await fetch(`/api/list?inviteCode=${encodeURIComponent(inviteCode)}`)
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success && result.data) {
+              // API 获取成功，设置数据并隐藏文件选择面板
+              const initialized = initializeRanks(result.data)
+              setReminders(initialized)
+              setShowFileSelectionModal(false)
+              return
+            }
           }
+        } catch (apiError) {
+          console.warn('从 API 获取数据失败，尝试使用本地存储:', apiError)
         }
-      } catch (apiError) {
-        console.warn('从 API 获取数据失败，尝试使用本地存储:', apiError)
       }
 
       // API 获取失败，检查是否有有效的文件访问权限
@@ -595,6 +721,31 @@ export default function Home() {
     // 计算当前视图下所有标签的统计信息
     return calculateAllTagStatistics(currentViewReminders)
   }, [reminders, selectedList, currentWeek]) // 移除filteredReminders依赖
+
+  // 如果正在检查 cookie，显示加载状态
+  if (isCheckingCookie) {
+    return (
+      <div className="flex h-screen bg-gray-50 items-center justify-center">
+        <div className="text-gray-600">初始化中...</div>
+      </div>
+    )
+  }
+
+  // 如果未授权，只显示邀请码弹窗，不显示主界面
+  if (!isAuthorized) {
+    return (
+      <>
+        <InviteCodeModal
+          isOpen={showInviteCodeModal}
+          onSubmit={handleInviteCodeSubmit}
+          error={inviteCodeError}
+          isLoading={isVerifyingInviteCode}
+        />
+        {/* 未授权时显示空白背景 */}
+        <div className="flex h-screen bg-gray-50"></div>
+      </>
+    )
+  }
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">

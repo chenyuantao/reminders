@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server'
 import { Reminder } from '@/types/reminder'
 import { toDatabaseFormat, fromDatabaseFormat } from '@/utils/dbConverter'
 import { getSupabaseClient } from '@/utils/supabaseClient'
+import { checkCode } from '@/utils/checkCode'
 
 export async function PUT(request: Request) {
   try {
+    const res = checkCode(request)
+    if (res) return res
+
     const supabase = getSupabaseClient()
     const body = await request.json()
 
