@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Trash2, Flag, Plus, Clock } from 'lucide-react'
+import { Trash2, Plus, Clock } from 'lucide-react'
 import { Reminder } from '@/types/reminder'
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
-import { extractTagsFromReminder, countTagsInReminders } from '@/utils/tagExtractor'
+import { extractTagsFromReminder } from '@/utils/tagExtractor'
 import ContextMenu from './ContextMenu'
 import LinkifiedText from './LinkifiedText'
 import {
@@ -124,7 +124,6 @@ interface DaySectionProps {
   editingId: string | null
   editingTitle: string
   editingNotes: string
-  insertPosition: number | null
   onToggle: (id: string) => void
   onDelete: (id: string) => void
   onUpdate: (id: string, updates: Partial<Reminder>) => void
@@ -134,8 +133,7 @@ interface DaySectionProps {
   startEditing: (reminder: Reminder) => void
   saveEditing: () => void
   cancelEditing: () => void
-  onAddReminder: (insertPosition?: number, targetDate?: Date) => string
-  setInsertPosition: (position: number | null) => void
+  onAddReminder: (targetDate?: Date, targetRank?: number) => Reminder | null
   selectedReminderIds: Set<string>
   onReminderItemClick: (reminderId: string, event: React.MouseEvent) => void
   onReminderContextMenu: (reminderId: string, event: React.MouseEvent) => void
@@ -152,7 +150,6 @@ function DaySection({
   editingId,
   editingTitle,
   editingNotes,
-  insertPosition,
   onToggle,
   onDelete,
   onUpdate,
@@ -163,13 +160,12 @@ function DaySection({
   saveEditing,
   cancelEditing,
   onAddReminder,
-  setInsertPosition,
   selectedReminderIds,
   onReminderItemClick,
   onReminderContextMenu
 }: DaySectionProps) {
   // 处理添加按钮点击
-  const handleAddClick = () => {
+  const handleAddClick =  () => {
     // 如果当前有正在编辑的提醒事项，先保存它
     if (editingId && editingTitle.trim()) {
       // 保存当前编辑的内容（保留所有空格）
@@ -182,51 +178,23 @@ function DaySection({
       cancelEditing()
     }
 
-    // 计算插入位置
-    let insertPos: number
-
-    // 找到该日期在全局提醒事项中的最后位置
-    // 遍历全局列表，找到该日期之后第一个提醒事项的位置
-    insertPos = reminders.findIndex(reminder => {
-      if (reminder.dueDate) {
-        const reminderDate = new Date(reminder.dueDate)
-        // 如果找到的日期大于当前日期，就在这个位置插入
-        return reminderDate > dayData.date
-      }
-      return false
-    })
-
-    // 如果没有找到更大的日期，说明应该插入到末尾
-    if (insertPos === -1) {
-      insertPos = reminders.length
-    }
-
-    // 如果该日期已经有提醒事项，需要确保插入到该日期的最后
+    // 计算目标 rank 值：基于该日期中最后一个提醒事项的 rank
+    let targetRank: number | undefined
     if (dayData.reminders.length > 0) {
-      // 找到该日期最后一个提醒事项在全局列表中的位置
-      const lastReminderInDay = dayData.reminders[dayData.reminders.length - 1]
-      const lastReminderGlobalIndex = reminders.findIndex(reminder => reminder.id === lastReminderInDay.id)
-
-      // 如果找到了，就在其后插入；否则使用之前计算的位置
-      if (lastReminderGlobalIndex !== -1) {
-        insertPos = lastReminderGlobalIndex + 1
-      }
+      // 找到该日期中 rank 最大的提醒事项
+      const maxRankReminder = dayData.reminders.reduce((max, r) => {
+        return (r.rank || 0) > (max.rank || 0) ? r : max
+      })
+      // 在其基础上 +1，插入到该日期的最后
+      targetRank = (maxRankReminder.rank || 0) + 1
     }
+    // 如果没有该日期的提醒事项，targetRank 为 undefined，让 addReminder 自动计算
 
     // 直接创建新的提醒事项并进入编辑态
-    const newReminderId = onAddReminder(insertPos, dayData.date)
-    if (newReminderId) {
+    const newReminder = onAddReminder(dayData.date, targetRank);
+    if (newReminder) {
       // 立即进入编辑态
-      startEditing({
-        id: newReminderId,
-        title: '',
-        notes: '',
-        completed: false,
-        dueDate: dayData.date.toISOString(),
-        // priority: 'medium', // 暂时不写入priority数据
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      })
+      startEditing(newReminder)
     }
   }
 
@@ -304,14 +272,14 @@ function DaySection({
 
 interface ReminderListProps {
   reminders: Reminder[]
-  onToggle: (id: string) => void
-  onDelete: (id: string) => void
-  onUpdate: (id: string, updates: Partial<Reminder>) => void
-  onReorder: (reminders: Reminder[]) => void
-  onAddReminder: (insertPosition?: number, targetDate?: Date) => string
-  onTagClick: (date: Date, tag: string) => void
-  onBatchMove: (reminderIds: string[], targetDate: Date) => void
-  onBatchDelete: (reminderIds: string[]) => void
+  onToggle: (id: string) => void | Promise<void>
+  onDelete: (id: string) => void | Promise<void>
+  onUpdate: (id: string, updates: Partial<Reminder>) => void | Promise<void>
+  onReorder: (reminders: Reminder[]) => void | Promise<void>
+  onAddReminder: (targetDate?: Date, targetRank?: number) => Reminder | null
+  onTagClick: (date: Date, tag: string) => void | Promise<void>
+  onBatchMove: (reminderIds: string[], targetDate: Date) => void | Promise<void>
+  onBatchDelete: (reminderIds: string[]) => void | Promise<void>
   onEditingChange?: (editingId: string | null) => void
   newlyCreatedReminderId?: string | null
   currentWeek?: Date
@@ -685,7 +653,6 @@ export default function ReminderList({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [editingNotes, setEditingNotes] = useState('')
-  const [insertPosition, setInsertPosition] = useState<number | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // 多选状态管理
@@ -903,6 +870,9 @@ export default function ReminderList({
       const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
       const dayOfWeek = weekDays[today.getDay()]
 
+      // 按 rank 排序（rank 越小越靠前）
+      todayReminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+
       return [{
         dayName: dayOfWeek,
         date: today,
@@ -931,12 +901,16 @@ export default function ReminderList({
       // 转换为数组格式，按日期排序
       return Object.entries(groupedByDate)
         .sort(([, a], [, b]) => a.date.getTime() - b.date.getTime())
-        .map(([dateKey, data], index) => ({
-          dayName: format(data.date, 'MM/dd'),
-          date: data.date,
-          reminders: data.reminders,
-          dayKey: `scheduled-${index}`
-        }))
+        .map(([dateKey, data], index) => {
+          // 按 rank 排序（rank 越小越靠前）
+          data.reminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+          return {
+            dayName: format(data.date, 'MM/dd'),
+            date: data.date,
+            reminders: data.reminders,
+            dayKey: `scheduled-${index}`
+          }
+        })
     }
 
     // 如果选择"已完成"，直接返回所有已完成的任务，不按周分组
@@ -959,12 +933,16 @@ export default function ReminderList({
       // 转换为数组格式，按日期排序（最新的在前）
       return Object.entries(groupedByDate)
         .sort(([, a], [, b]) => b.date.getTime() - a.date.getTime())
-        .map(([dateKey, data], index) => ({
-          dayName: format(data.date, 'MM/dd'),
-          date: data.date,
-          reminders: data.reminders,
-          dayKey: `completed-${index}`
-        }))
+        .map(([dateKey, data], index) => {
+          // 按 rank 排序（rank 越小越靠前）
+          data.reminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+          return {
+            dayName: format(data.date, 'MM/dd'),
+            date: data.date,
+            reminders: data.reminders,
+            dayKey: `completed-${index}`
+          }
+        })
     }
 
     // 其他情况按周分类显示（每周事项、已标记等）
@@ -984,6 +962,9 @@ export default function ReminderList({
       if (hideCompleted && selectedList !== 'completed') {
         dayReminders = dayReminders.filter(r => !r.completed)
       }
+
+      // 按 rank 排序（rank 越小越靠前）
+      dayReminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
 
       return {
         dayName,
@@ -1201,7 +1182,6 @@ export default function ReminderList({
                   editingId={editingId}
                   editingTitle={editingTitle}
                   editingNotes={editingNotes}
-                  insertPosition={insertPosition}
                   selectedList={selectedList}
                   onToggle={onToggle}
                   onDelete={onDelete}
@@ -1213,7 +1193,6 @@ export default function ReminderList({
                   saveEditing={saveEditing}
                   cancelEditing={cancelEditing}
                   onAddReminder={onAddReminder}
-                  setInsertPosition={setInsertPosition}
                   selectedReminderIds={selectedReminderIds}
                   onReminderItemClick={handleReminderItemClick}
                   onReminderContextMenu={handleContextMenu}
@@ -1257,7 +1236,6 @@ export default function ReminderList({
                         editingId={editingId}
                         editingTitle={editingTitle}
                         editingNotes={editingNotes}
-                        insertPosition={insertPosition}
                         onToggle={onToggle}
                         onDelete={onDelete}
                         onUpdate={onUpdate}
@@ -1268,7 +1246,6 @@ export default function ReminderList({
                         saveEditing={saveEditing}
                         cancelEditing={cancelEditing}
                         onAddReminder={onAddReminder}
-                        setInsertPosition={setInsertPosition}
                         selectedReminderIds={selectedReminderIds}
                         onReminderItemClick={handleReminderItemClick}
                         onReminderContextMenu={handleContextMenu}

@@ -6,6 +6,7 @@ export interface Reminder {
   dueDate?: string
   priority?: 'low' | 'medium' | 'high' // 暂时设为可选
   tags?: string[] // 新增：标签数组
+  rank: number // 排序字段，rank 越小越靠前
   createdAt: string
   updatedAt: string
 }

@@ -74,14 +74,6 @@ export function calculateAllTagStatistics(reminders: any[]): {
 }
 
 /**
- * 统计标签在提醒事项列表中的出现次数
- * @deprecated 使用 calculateAllTagStatistics 替代
- */
-export function countTagsInReminders(reminders: any[]): Record<string, number> {
-  return calculateAllTagStatistics(reminders).tagCounts
-}
-
-/**
  * 计算标签的完成率
  * @deprecated 使用 calculateAllTagStatistics 替代
  */

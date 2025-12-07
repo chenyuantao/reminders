@@ -8,6 +8,7 @@ import { Reminder, List } from '@/types/reminder'
 import { startOfWeek, addWeeks, isSameDay } from 'date-fns'
 import { ChevronLeft, ChevronRight, X, Eye, EyeOff } from 'lucide-react'
 import { FileStorageService } from '@/services/fileStorage'
+import { MutationService } from '@/services/mutationService'
 import { extractTagsFromReminder, calculateAllTagStatistics } from '@/utils/tagExtractor'
 import TagStats from '@/components/TagStats'
 
@@ -107,32 +108,31 @@ export default function Home() {
         if (clipboardText && clipboardText.trim()) {
           const today = new Date()
 
-          // 创建新的提醒事项，标题为粘贴的内容
-          const newReminder: Reminder = {
-            id: Date.now().toString(),
-            title: clipboardText.trim(),
-            notes: '',
-            dueDate: today.toISOString(),
-            tags: [], // 标签会在后续的提取过程中自动添加
-            completed: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
+          // 计算新 reminder 的 rank 值（添加到末尾）
+          const lastReminder = reminders[reminders.length - 1]
+          const newRank = lastReminder ? (lastReminder.rank || 0) + 1 : 0
 
           // 提取标签
-          const tags = extractTagsFromReminder(newReminder.title, newReminder.notes)
-          newReminder.tags = tags
+          const tags = extractTagsFromReminder(clipboardText.trim(), '')
 
-          // 添加到提醒事项列表
-          const updatedReminders = [...reminders, newReminder]
+          // 使用 MutationService 创建新的提醒事项
+          const updatedReminders = MutationService.createReminder(
+            {
+              id: Date.now().toString(),
+              title: clipboardText.trim(),
+              notes: '',
+              dueDate: today.toISOString(),
+              tags: tags,
+              completed: false,
+              rank: newRank,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              source: '粘贴事件'
+            },
+            reminders
+          )
+
           setReminders(updatedReminders)
-
-          // 保存数据
-          FileStorageService.saveData(updatedReminders).catch(error => {
-            console.error('保存数据失败:', error)
-          })
-
-          console.log('已自动添加粘贴内容到今天的待办事项:', clipboardText.trim())
         }
       } catch (error) {
         console.error('处理粘贴事件失败:', error)
@@ -168,13 +168,27 @@ export default function Home() {
     }
   }
 
+  // 为没有 rank 的旧数据初始化 rank 值
+  const initializeRanks = (reminders: Reminder[]): Reminder[] => {
+    return reminders.map((reminder, index) => {
+      // 如果已经有 rank 值，保持不变
+      if (reminder.rank !== undefined && reminder.rank !== null) {
+        return reminder
+      }
+      // 否则使用索引作为初始 rank 值
+      return { ...reminder, rank: index }
+    })
+  }
+
   // 加载数据和文件信息
   const loadDataAndFileInfo = async () => {
     try {
       // 首先尝试从localStorage加载数据作为备用
       const savedReminders = localStorage.getItem('reminders')
       if (savedReminders) {
-        setReminders(JSON.parse(savedReminders))
+        const parsed = JSON.parse(savedReminders) as Reminder[]
+        const initialized = initializeRanks(parsed)
+        setReminders(initialized)
       }
 
       // 检查文件访问权限
@@ -185,7 +199,7 @@ export default function Home() {
         try {
           const data = await FileStorageService.loadData()
           if (data && data.length > 0) {
-            setReminders(data)
+            setReminders(initializeRanks(data))
           }
         } catch (error) {
           console.warn('从文件加载数据失败，使用localStorage数据:', error)
@@ -210,10 +224,11 @@ export default function Home() {
         // 尝试从文件读取数据
         try {
           const data = await FileStorageService.readFromFile(fileHandle)
-          setReminders(data || [])
+          const initialized = initializeRanks(data || [])
+          setReminders(initialized)
 
           // 设置文件句柄时传递初始数据，这样会在创建持久化writable流时自动写入
-          await FileStorageService.setFileHandle(fileHandle, data || [])
+          await FileStorageService.setFileHandle(fileHandle, initialized)
         } catch (error) {
           console.warn('从文件读取数据失败，使用空数据:', error)
           setReminders([])
@@ -238,7 +253,9 @@ export default function Home() {
         // 回退到localStorage
         const savedReminders = localStorage.getItem('reminders')
         if (savedReminders) {
-          setReminders(JSON.parse(savedReminders))
+          const parsed = JSON.parse(savedReminders) as Reminder[]
+          const initialized = initializeRanks(parsed)
+          setReminders(initialized)
         }
       }
 
@@ -301,7 +318,7 @@ export default function Home() {
     }
   }
 
-  const addReminder = (insertPosition?: number, targetDate?: Date) => {
+  const addReminder = (targetDate?: Date, targetRank?: number) => {
     // 当选择"每周事项"且没有指定日期时，设置为当前选择周的第一天
     let dueDate = targetDate
     if (selectedList === 'all' && !targetDate) {
@@ -309,144 +326,140 @@ export default function Home() {
       dueDate = startOfCurrentWeek
     }
 
-    const newReminder: Reminder = {
-      id: Date.now().toString(),
-      title: '',
-      notes: '',
-      dueDate: dueDate ? dueDate.toISOString() : undefined,
-      // priority: 'medium', // 暂时不写入priority数据
-      tags: [], // 初始化为空数组
-      completed: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    // 计算新 reminder 的 rank 值
+    let newRank: number
+    if (targetRank !== undefined) {
+      // 如果指定了 targetRank，直接使用
+      newRank = targetRank
+    } else {
+      // 如果没有指定，计算默认 rank 值
+      // 找到相同日期的提醒事项，计算合适的 rank
+      const sameDateReminders = reminders.filter(r => {
+        if (!r.dueDate || !dueDate) return false
+        return new Date(r.dueDate).toDateString() === dueDate.toDateString()
+      })
+      
+      if (sameDateReminders.length === 0) {
+        // 如果该日期没有其他提醒事项，从 0 开始
+        newRank = 0
+      } else {
+        // 找到该日期中 rank 最大的，在其基础上 +1
+        const maxRank = Math.max(...sameDateReminders.map(r => r.rank || 0))
+        newRank = maxRank + 1
+      }
     }
 
-    let updatedReminders: Reminder[]
-    if (insertPosition !== undefined && insertPosition >= 0 && insertPosition <= reminders.length) {
-      // 在指定位置插入
-      updatedReminders = [
-        ...reminders.slice(0, insertPosition),
-        newReminder,
-        ...reminders.slice(insertPosition)
-      ]
-    } else {
-      // 在末尾添加
-      updatedReminders = [...reminders, newReminder]
-    }
+    const newReminderId = Date.now().toString()
+
+    // 使用 MutationService 创建新的提醒事项（根据 rank 自动排序）
+    const updatedReminders = MutationService.createReminder(
+      {
+        id: newReminderId,
+        title: '',
+        notes: '',
+        dueDate: dueDate ? dueDate.toISOString() : undefined,
+        tags: [],
+        completed: false,
+        rank: newRank,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        source: 'addReminder'
+      },
+      reminders
+    )
 
     setReminders(updatedReminders)
 
-    // 保存数据（优先保存到文件，失败则保存到localStorage）
-    FileStorageService.saveData(updatedReminders).catch(error => {
-      console.error('保存数据失败:', error)
-    })
-
-    // 返回新创建的提醒事项ID，用于立即进入编辑态
-    return newReminder.id
+    // 返回新创建的提醒事项对象，用于立即进入编辑态
+    const newReminder = updatedReminders.find(r => r.id === newReminderId)
+    return newReminder || null
   }
 
   const toggleReminder = (id: string) => {
-    const updatedReminders = reminders.map(reminder =>
-      reminder.id === id ? { ...reminder, completed: !reminder.completed, updatedAt: new Date().toISOString() } : reminder
-    ).sort((a, b) => {
-      // 已完成的排在最前面
-      if (a.completed && !b.completed) return -1
-      if (!a.completed && b.completed) return 1
-      // 如果都是已完成，按更新时间排序（最新的在后面）
-      if (a.completed && b.completed) {
-        const aUpdatedAt = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
-        const bUpdatedAt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
-        return aUpdatedAt - bUpdatedAt // 降序排列，最新的在后面
-      }
-      // 如果都是未完成，保持原有顺序
-      return 0
-    })
+    const updatedReminders = MutationService.toggleReminder(id, reminders)
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders).catch(error => {
-      console.error('保存数据失败:', error)
-    })
   }
 
   const deleteReminder = (id: string) => {
-    const updatedReminders = reminders.filter(reminder => reminder.id !== id)
+    const reminder = reminders.find(r => r.id === id)
+    if (!reminder) return
+
+    const updatedReminders = MutationService.deleteReminder(
+      {
+        id,
+        reminder,
+        source: 'deleteReminder'
+      },
+      reminders
+    )
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders).catch(error => {
-      console.error('保存数据失败:', error)
-    })
   }
 
   const updateReminder = (id: string, updates: Partial<Reminder>) => {
+    const currentReminder = reminders.find(r => r.id === id)
+    if (!currentReminder) return
+
     // 如果更新了标题或备注，提取标签
     let tags = updates.tags
     if (updates.title !== undefined || updates.notes !== undefined) {
-      const currentReminder = reminders.find(r => r.id === id)
-      if (currentReminder) {
-        const newTitle = updates.title !== undefined ? updates.title : currentReminder.title
-        const newNotes = updates.notes !== undefined ? updates.notes : currentReminder.notes
-        tags = extractTagsFromReminder(newTitle, newNotes)
-      }
+      const newTitle = updates.title !== undefined ? updates.title : currentReminder.title
+      const newNotes = updates.notes !== undefined ? updates.notes : currentReminder.notes
+      tags = extractTagsFromReminder(newTitle, newNotes)
     }
 
-    const updatedReminders = reminders.map(reminder =>
-      reminder.id === id ? { ...reminder, ...updates, tags } : reminder
+    const finalUpdates = { ...updates, tags }
+
+    const updatedReminders = MutationService.updateReminder(
+      {
+        id,
+        updates: finalUpdates,
+        currentReminder,
+        source: 'updateReminder'
+      },
+      reminders
     )
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders).catch(error => {
-      console.error('保存数据失败:', error)
-    })
   }
 
   const reorderReminders = (newOrder: Reminder[]) => {
-    // 以“块替换”的方式合并：
-    // - 在全量列表 prev 中找到第一次出现 newOrder 内元素的位置
-    // - 用 newOrder 的顺序整体替换掉 prev 中所有 newOrder 内的元素
-    // - 未在 newOrder 内的元素保持原有相对顺序与位置
-    const idsInNew = new Set(newOrder.map(r => r.id))
-    const merged: Reminder[] = []
-    let inserted = false
-    for (const item of reminders) {
-      if (idsInNew.has(item.id)) {
-        if (!inserted) {
-          // 插入新顺序块
-          for (const r of newOrder) merged.push(r)
-          inserted = true
-        }
-        // 跳过原有的这些元素（已由新顺序块替换）
-        continue
-      }
-      merged.push(item)
-    }
-    // 兜底：若 newOrder 中有不在 prev 的（理论上不应发生），附加到末尾
-    if (!inserted) {
-      for (const r of newOrder) if (!merged.find(x => x.id === r.id)) merged.push(r)
-    }
-    setReminders(merged)
-    // 持久化
-    FileStorageService.saveData(merged).catch(error => {
-      console.error('保存数据失败:', error)
-    })
+    const updatedReminders = MutationService.reorderReminders(
+      {
+        reminders,
+        newOrder,
+        source: 'reorderReminders'
+      },
+      reminders
+    )
+    setReminders(updatedReminders)
   }
 
   // 批量移动提醒事项
   const handleBatchMove = (reminderIds: string[], targetDate: Date) => {
-    const updatedReminders = reminders.map(reminder =>
-      reminderIds.includes(reminder.id)
-        ? { ...reminder, dueDate: targetDate.toISOString(), updatedAt: new Date().toISOString() }
-        : reminder
+    const movedReminders = reminders.filter(r => reminderIds.includes(r.id))
+    const updatedReminders = MutationService.batchMoveReminders(
+      {
+        reminderIds,
+        reminders: movedReminders,
+        targetDate,
+        source: 'handleBatchMove'
+      },
+      reminders
     )
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders).catch(error => {
-      console.error('保存数据失败:', error)
-    })
   }
 
   // 批量删除提醒事项
   const handleBatchDelete = (reminderIds: string[]) => {
-    const updatedReminders = reminders.filter(reminder => !reminderIds.includes(reminder.id))
+    const deletedReminders = reminders.filter(r => reminderIds.includes(r.id))
+    const updatedReminders = MutationService.batchDeleteReminders(
+      {
+        reminderIds,
+        reminders: deletedReminders,
+        source: 'handleBatchDelete'
+      },
+      reminders
+    )
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders).catch(error => {
-      console.error('保存数据失败:', error)
-    })
   }
 
   // 处理hashtag筛选点击
@@ -466,27 +479,33 @@ export default function Home() {
 
   // 处理标签点击，创建带有相同标签的新事项
   const handleTagClick = (date: Date, tag: string) => {
-    // 创建新的提醒事项
-    const newReminder: Reminder = {
-      id: Date.now().toString(),
-      title: `#${tag} `,
-      notes: '',
-      completed: false,
-      dueDate: date.toISOString(),
-      tags: [tag], // 预填充标签
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
+    // 计算新 reminder 的 rank 值（添加到末尾）
+    const lastReminder = reminders[reminders.length - 1]
+    const newRank = lastReminder ? (lastReminder.rank || 0) + 1 : 0
 
-    // 添加到提醒事项列表
-    const updatedReminders = [...reminders, newReminder]
+    const newReminderId = Date.now().toString()
+
+    // 使用 MutationService 创建新的提醒事项
+    const updatedReminders = MutationService.createReminder(
+      {
+        id: newReminderId,
+        title: `#${tag} `,
+        notes: '',
+        completed: false,
+        dueDate: date.toISOString(),
+        tags: [tag], // 预填充标签
+        rank: newRank,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        source: 'handleTagClick'
+      },
+      reminders
+    )
+
     setReminders(updatedReminders)
-    FileStorageService.saveData(updatedReminders).catch(error => {
-      console.error('保存数据失败:', error)
-    })
 
     // 设置新创建的事项ID，用于立即进入编辑态
-    setNewlyCreatedReminderId(newReminder.id)
+    setNewlyCreatedReminderId(newReminderId)
 
     // 延迟清理，确保编辑状态能够正确触发
     setTimeout(() => {
