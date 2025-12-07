@@ -13,19 +13,11 @@ export async function POST(request: Request) {
     const supabase = getSupabaseClient()
     const body = await request.json()
 
-    // 验证必需字段
-    if (!body.title) {
-      return NextResponse.json(
-        { error: '缺少必需字段: title' },
-        { status: 400 }
-      )
-    }
-
     // 准备插入的数据（将 camelCase 转换为 snake_case）
     const now = new Date().toISOString()
     const reminderData: Partial<Reminder> = {
       id: body.id || randomUUID(),
-      title: body.title,
+      title: body.title || '',
       notes: body.notes,
       completed: body.completed ?? false,
       dueDate: body.dueDate,

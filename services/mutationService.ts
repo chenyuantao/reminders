@@ -1,4 +1,5 @@
 import { Reminder } from '@/types/reminder'
+import { toast } from 'react-toastify'
 import { FileStorageService } from './fileStorage'
 
 export interface CreateReminderParams {
@@ -67,25 +68,12 @@ export class MutationService {
     }
 
     // 根据 rank 值插入到正确位置（按 rank 排序）
-    const updatedReminders = [...currentReminders, newReminder]
-    // 按 rank 排序，rank 越小越靠前
-    updatedReminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
-
+    const updatedReminders = this.sortReminders([...currentReminders, newReminder])
     // 保存数据
     FileStorageService.saveData(updatedReminders).catch(error => {
       console.error('保存数据失败:', error)
-    })
-
-    // 打印新增操作日志
-    console.log('📝 [新增 Reminder]', {
-      id: newReminder.id,
-      title: newReminder.title,
-      dueDate: newReminder.dueDate,
-      tags: newReminder.tags,
-      rank: newReminder.rank,
-      source: params.source || 'createReminder'
-    })
-
+    });
+    this.insertCgi(newReminder);
     return updatedReminders
   }
 
@@ -107,27 +95,11 @@ export class MutationService {
       console.error('保存数据失败:', error)
     })
 
-    // 打印修改操作日志
-    const changedFields: Record<string, { old: any, new: any }> = {}
-    Object.keys(updates).forEach(key => {
-      const typedKey = key as keyof Reminder
-      if (updates[typedKey] !== undefined && updates[typedKey] !== currentReminder[typedKey]) {
-        changedFields[key] = {
-          old: currentReminder[typedKey],
-          new: updates[typedKey]
-        }
-      }
-    })
-
-    if (Object.keys(changedFields).length > 0) {
-      console.log('✏️ [修改 Reminder]', {
-        id: currentReminder.id,
-        title: currentReminder.title,
-        changedFields,
-        source: params.source || 'updateReminder'
-      })
+    // 调用更新 API
+    const updatedReminder = updatedReminders.find(r => r.id === id)
+    if (updatedReminder) {
+      this.updateCgi(id, updates)
     }
-
     return updatedReminders
   }
 
@@ -138,24 +110,14 @@ export class MutationService {
     params: DeleteReminderParams,
     currentReminders: Reminder[]
   ): Reminder[] {
-    const { id, reminder } = params
-
+    const { id } = params
     const updatedReminders = currentReminders.filter(reminder => reminder.id !== id)
-
     // 保存数据
     FileStorageService.saveData(updatedReminders).catch(error => {
       console.error('保存数据失败:', error)
-    })
-
-    // 打印删除操作日志
-    console.log('🗑️ [删除 Reminder]', {
-      id: reminder.id,
-      title: reminder.title,
-      dueDate: reminder.dueDate,
-      tags: reminder.tags,
-      source: params.source || 'deleteReminder'
-    })
-
+    });
+    // 调用删除 API
+    this.deleteCgi(id)
     return updatedReminders
   }
 
@@ -171,40 +133,23 @@ export class MutationService {
       return currentReminders
     }
 
-    const updatedReminders = currentReminders.map(reminder =>
-      reminder.id === id
-        ? { ...reminder, completed: !reminder.completed, updatedAt: new Date().toISOString() }
-        : reminder
-    ).sort((a, b) => {
-      // 已完成的排在最前面
-      if (a.completed && !b.completed) return -1
-      if (!a.completed && b.completed) return 1
-      // 如果都是已完成，按更新时间排序（最新的在后面）
-      if (a.completed && b.completed) {
-        const aUpdatedAt = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
-        const bUpdatedAt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
-        return aUpdatedAt - bUpdatedAt // 降序排列，最新的在后面
-      }
-      // 如果都是未完成，按 rank 排序（rank 越小越靠前）
-      return (a.rank || 0) - (b.rank || 0)
-    })
+    const updatedReminders = this.sortReminders(
+      currentReminders.map(reminder =>
+        reminder.id === id
+          ? { ...reminder, completed: !reminder.completed, updatedAt: new Date().toISOString() }
+          : reminder
+      )
+    )
 
     // 保存数据
     FileStorageService.saveData(updatedReminders).catch(error => {
       console.error('保存数据失败:', error)
     })
-
-    // 打印修改操作日志
-    const newCompleted = !reminder.completed
-    console.log('✏️ [修改 Reminder]', {
-      id: reminder.id,
-      title: reminder.title,
-      action: 'toggleCompleted',
-      oldValue: reminder.completed,
-      newValue: newCompleted,
-      source: 'toggleReminder'
-    })
-
+    // 调用更新 API
+    const updatedReminder = updatedReminders.find(r => r.id === id)
+    if (updatedReminder) {
+      this.updateCgi(id, updatedReminder)
+    }
     return updatedReminders
   }
 
@@ -226,13 +171,9 @@ export class MutationService {
     )
 
     // 获取目标日期中已有的提醒事项（不包括正在移动的）
-    const targetDateReminders = updatedReminders.filter(
+    const targetDateReminders = this.sortReminders(updatedReminders.filter(
       r => r.dueDate === targetDateStr && !reminderIds.includes(r.id)
-    )
-
-    // 按 rank 排序目标日期中已有的提醒事项
-    targetDateReminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
-
+    ));
     // 为移动的提醒事项重新计算 rank 值
     // 将它们添加到目标日期列表的末尾
     const movedReminders = updatedReminders.filter(r => reminderIds.includes(r.id))
@@ -281,23 +222,13 @@ export class MutationService {
       console.error('保存数据失败:', error)
     })
 
-    // 打印批量修改操作日志
-    if (reminders.length > 0) {
-      console.log('✏️ [批量修改 Reminder]', {
-        count: reminders.length,
-        reminderIds: reminderIds,
-        reminders: reminders.map(r => ({
-          id: r.id,
-          title: r.title,
-          oldDueDate: r.dueDate,
-          newDueDate: targetDateStr
-        })),
-        rankChanges: rankChanges,
-        targetDate: targetDateStr,
-        source: params.source || 'handleBatchMove'
+    // 调用更新 API（批量更新）
+    movedReminders.forEach(reminder => {
+      this.updateCgi(reminder.id, {
+        ...reminder,
+        updatedAt: new Date().toISOString()
       })
-    }
-
+    })
     return updatedReminders
   }
 
@@ -317,21 +248,10 @@ export class MutationService {
       console.error('保存数据失败:', error)
     })
 
-    // 打印批量删除操作日志
-    if (reminders.length > 0) {
-      console.log('🗑️ [批量删除 Reminder]', {
-        count: reminders.length,
-        reminderIds: reminderIds,
-        reminders: reminders.map(r => ({
-          id: r.id,
-          title: r.title,
-          dueDate: r.dueDate,
-          tags: r.tags
-        })),
-        source: params.source || 'handleBatchDelete'
-      })
-    }
-
+    // 调用删除 API（批量删除）
+    reminderIds.forEach(id => {
+      this.deleteCgi(id)
+    });
     return updatedReminders
   }
 
@@ -428,7 +348,7 @@ export class MutationService {
     const rankChangedReminders: Reminder[] = [];
 
     // 更新全量 reminders，应用 newOrder 中的字段更新和 rank 变化
-    const updatedReminders = reminders.map(reminder => {
+    const updatedReminders = this.sortReminders(reminders.map(reminder => {
       // 不在 newOrder 中，但可能需要更新 rank（处理冲突时移动的项）
       const newRank = rankUpdateMap.get(reminder.id)
       if (newRank !== undefined) {
@@ -444,26 +364,92 @@ export class MutationService {
       }
 
       return reminder
-    })
-
-    // 基于新的 rank 值重新排序整个列表
-    updatedReminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
-
+    }))
     // 保存数据
     FileStorageService.saveData(updatedReminders).catch(error => {
       console.error('保存数据失败:', error)
     })
-
-    // 打印排序修改操作日志
-    if (rankChangedReminders.length > 0) {
-      console.log('🔄 [排序修改 Reminder]', {
-        count: rankChangedReminders.length,
-        reminders: rankChangedReminders,
-        source: params.source || 'reorderReminders'
-      })
-    }
-
+    // 调用更新 API（批量更新 rank）
+    rankChangedReminders.forEach(reminder => {
+      this.updateCgi(reminder.id, reminder)
+    })
     return updatedReminders
+  }
+
+  static insertCgi(newReminder: Reminder) {
+    return fetch('/api/insert', {
+      method: 'POST',
+      body: JSON.stringify(newReminder)
+    }).then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          console.log('📝 [新增 Reminder]', data);
+        } else {
+          toast.error(data.error);
+        }
+      })
+      .catch(error => {
+        toast.error(error.message);
+      });
+  }
+
+  static updateCgi(id: string, updates: Partial<Reminder>) {
+    return fetch('/api/update', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id, ...updates })
+    }).then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          console.log('✏️ [更新 Reminder]', data);
+        } else {
+          toast.error(data.error);
+        }
+      })
+      .catch(error => {
+        toast.error(error.message);
+      });
+  }
+
+  static deleteCgi(id: string) {
+    return fetch(`/api/delete?id=${id}`, {
+      method: 'DELETE',
+    }).then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          console.log('🗑️ [删除 Reminder]', data);
+        } else {
+          toast.error(data.error);
+        }
+      })
+      .catch(error => {
+        toast.error(error.message);
+      });
+  }
+
+  /**
+   * 排序 Reminder 数组
+   * 规则：
+   * 1. 已完成的排在最前面
+   * 2. 已完成的按更新时间排序（最新的在后面）
+   * 3. 未完成的按 rank 排序（rank 越小越靠前）
+   */
+  static sortReminders(reminders: Reminder[]): Reminder[] {
+    return reminders.sort((a, b) => {
+      // 已完成的排在最前面
+      if (a.completed && !b.completed) return -1
+      if (!a.completed && b.completed) return 1
+      // 如果都是已完成，按更新时间排序（最新的在后面）
+      if (a.completed && b.completed) {
+        const aUpdatedAt = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
+        const bUpdatedAt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
+        return aUpdatedAt - bUpdatedAt // 升序排列，最新的在后面
+      }
+      // 如果都是未完成，按 rank 排序（rank 越小越靠前）
+      return (a.rank || 0) - (b.rank || 0)
+    })
   }
 }
 

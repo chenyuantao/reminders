@@ -6,6 +6,7 @@ import { Reminder } from '@/types/reminder'
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
 import { extractTagsFromReminder } from '@/utils/tagExtractor'
+import { MutationService } from '@/services/mutationService'
 import ContextMenu from './ContextMenu'
 import LinkifiedText from './LinkifiedText'
 import {
@@ -870,8 +871,8 @@ export default function ReminderList({
       const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
       const dayOfWeek = weekDays[today.getDay()]
 
-      // 按 rank 排序（rank 越小越靠前）
-      todayReminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+      // 使用统一的排序函数
+      todayReminders = MutationService.sortReminders(todayReminders)
 
       return [{
         dayName: dayOfWeek,
@@ -902,8 +903,8 @@ export default function ReminderList({
       return Object.entries(groupedByDate)
         .sort(([, a], [, b]) => a.date.getTime() - b.date.getTime())
         .map(([dateKey, data], index) => {
-          // 按 rank 排序（rank 越小越靠前）
-          data.reminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+          // 使用统一的排序函数
+          data.reminders = MutationService.sortReminders(data.reminders)
           return {
             dayName: format(data.date, 'MM/dd'),
             date: data.date,
@@ -934,8 +935,8 @@ export default function ReminderList({
       return Object.entries(groupedByDate)
         .sort(([, a], [, b]) => b.date.getTime() - a.date.getTime())
         .map(([dateKey, data], index) => {
-          // 按 rank 排序（rank 越小越靠前）
-          data.reminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+          // 使用统一的排序函数
+          data.reminders = MutationService.sortReminders(data.reminders)
           return {
             dayName: format(data.date, 'MM/dd'),
             date: data.date,
@@ -963,8 +964,8 @@ export default function ReminderList({
         dayReminders = dayReminders.filter(r => !r.completed)
       }
 
-      // 按 rank 排序（rank 越小越靠前）
-      dayReminders.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+      // 使用统一的排序函数
+      dayReminders = MutationService.sortReminders(dayReminders)
 
       return {
         dayName,
