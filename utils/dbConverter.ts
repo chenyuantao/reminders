@@ -54,7 +54,7 @@ export function fromDatabaseFormat(dbData: any): Reminder {
   return {
     id: dbData.id,
     title: dbData.title,
-    notes: dbData.notes || dbData.notes === null ? undefined : dbData.notes,
+    notes: dbData.notes || undefined,
     completed: dbData.completed ?? false,
     dueDate: dbData.dueDate,
     priority: dbData.priority || undefined,
